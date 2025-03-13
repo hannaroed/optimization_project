@@ -1,21 +1,21 @@
 import numpy as np
 
 class SVM:
-    def __init__(self, C=1.0, kernel="linear", alpha=0.01, tol=1e-4, max_iter=1000, mode="primal"):
+    def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-4, max_iter=1000, mode="primal"):
         """
         Initialize the SVM model.
         """
-        self.C = C
+        self.C = C # Regularization parameter
         self.kernel = kernel
-        self.alpha = alpha
-        self.tol = tol
-        self.max_iter = max_iter
+        self.lr = lr # Learning rate
+        self.tol = tol # Tolerance for stopping criterion
+        self.max_iter = max_iter # Max iterations
         self.mode = mode
-        self.w = None  # Primal weights
-        self.b = 0  # Bias term
-        self.alpha = None  # Dual variables (to be used later)
-        self.support_vectors = None  # Support vectors (to be used in dual)
-        self.support_y = None  # Support vector labels (for dual)
+        self.w = None # Weight vector (for primal)
+        self.b = 0 # Bias term
+        self.alpha = None # Lagrange multipliers (for dual)
+        self.support_vectors = None # Support vectors (for dual)
+        self.support_y = None # Support vector labels (for dual)
 
     def fit(self, X, y):
         """
@@ -34,17 +34,22 @@ class SVM:
 
     def _fit_primal(self, X, y):
         """Train the SVM using Stochastic Gradient Descent (SGD) for the primal formulation."""
-        M, d = X.shape # number of samples, number of features per sample
-        self.w = np.zeros(d) # initialize weights
-        self.b = 0 # initialize bias term
+        M, d = X.shape # Number of samples, number of features
+        self.w = np.zeros(d) # Initialize weights
+        self.b = 0 # Initialize bias term
+
         for _ in range(self.max_iter):
             for i in range(M):
                 margin = y[i] * (np.dot(self.w, X[i]) + self.b)
+
                 if margin < 1:
-                    self.w = self.w - self.lr * self.w + self.lr * (self.C * y[i] * X[i])  # weight update
-                    self.b = self.b + self.lr * (self.C * y[i]) # bias update
+                    # Update for misclassified points (hinge loss gradient)
+                    self.w = (1 - self.lr) * self.w + self.lr * self.C * y[i] * X[i]
+                    self.b += self.lr * self.C * y[i]
                 else:
-                    self.w = self.w - self.alpha * self.w # apply weight decay
+                    # Update for correctly classified points (regularization)
+                    self.w = (1 - self.lr) * self.w
+        
         return self.w, self.b
 
     def _fit_dual(self, X, y):
@@ -53,22 +58,31 @@ class SVM:
         """
         pass
 
+    def compute_gram_matrix(self, X):
+        """
+        Compute the Gram matrix for the given data points.
+        """
+        M = X.shape[0]
+        G = np.zeros((M, M))
+        for i in range(M):
+            for j in range(M):
+                G[i, j] = self._kernel_function(X[i], X[j])
+        return G
+
     def predict(self, X):
         """
         Predict class labels using the trained SVM.
-
         """
         return np.sign(self.decision_function(X))
 
     def decision_function(self, X):
         """
         Compute decision function values for given data points.
-
         """
         if self.mode == "primal":
             return np.dot(X, self.w) + self.b
         elif self.mode == "dual":
-            raise NotImplementedError("Decision function for dual SVM not implemented yet.")
+            pass
         else:
             raise ValueError("Mode must be 'primal' or 'dual'.")
 
@@ -79,4 +93,4 @@ class SVM:
         if self.kernel == "linear":
             return np.dot(x1, x2)
         else:
-            raise ValueError("Only 'linear' kernel is supported in primal SVM.")
+            raise ValueError("Only 'linear' kernel is supported so far.")
