@@ -82,21 +82,16 @@ class SVM:
 
             # Step length selection (Barzilai–Borwein method)
             tau = self.step_length_selection(G, Y, self.alpha, alpha_new)
-            print(f"Iteration {iter_count}: Step length = {tau}")
+            # print(f"Iteration {iter_count}: Step length = {tau}")
 
             # Check for convergence
             diff = np.linalg.norm(alpha_new - self.alpha)
-            print(f"Iteration {iter_count}: Difference between alpha updates = {diff}")
+            # print(f"Iteration {iter_count}: Difference between alpha updates = {diff}")
 
             self.alpha = alpha_new
             iter_count += 1
 
-        # Compute the weight vector
-        # self.w = np.sum((self.alpha[:, None] * y[:, None]) * X, axis=0)
-
-        # Compute the bias term
         support_idx = (self.alpha > 1e-5) & (self.alpha < self.C)
-        # self.b = np.mean(y[support_idx] - np.dot(X[support_idx], self.w))
 
         self.support_vectors = X[support_idx]
 
@@ -104,15 +99,17 @@ class SVM:
 
         self.support_alphas = self.alpha[support_idx]
 
-        # Compute w correctly
+        # Compute the weight vector
         self.w = np.sum(
             (self.support_alphas[:, None] * self.support_y[:, None])
             * self.support_vectors,
             axis=0,
         )
 
-        # Compute bias correctly
+        # Compute the bias term
         self.b = np.mean(self.support_y - np.dot(self.support_vectors, self.w))
+
+        print(f"Converged after {iter_count} iterations: Difference between alpha updates = {diff}")
 
         return self.w, self.b
 
