@@ -3,7 +3,7 @@ import numpy as np
 
 class SVM:
     def __init__(
-        self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=100, mode="primal"
+        self, C=1.0, kernel="linear", lr=0.01, tol=1e-2, max_iter=1000, mode="primal"
     ):
         """
         Initialize the SVM model.
@@ -105,11 +105,11 @@ class SVM:
 
     def step_length_selection(self, G, Y, alpha: float, alpha_new: float) -> float:
         """
-        Select the step length for the projected gradient descent.
+        Select the step length for the projected gradient descent using Barzilai-Borwein
         """
 
         tau_min = 1e-3
-        tau_max = 10
+        tau_max = 1
 
         # Compute gradient at alpha^(k)
         grad_alpha = Y @ G @ Y @ alpha - np.ones_like(alpha)
@@ -152,35 +152,54 @@ class SVM:
         """
         return np.dot(y, alpha_lambda)
 
-    def project_onto_feasible_set(self, gamma, y, C, delta=0.01):
+    def project_onto_feasible_set(self, alpha, y, C, delta=0.01):
         """
         Project the alpha vector onto the feasible set using bisection.
         """
-        beta = np.copy(gamma)
-        lambda_min, lambda_max = -10, 10
+        alpha_projected = self.alpha_lambda(alpha, y, 0, C)
 
-        while self.inner_product(y, self.alpha_lambda(beta, y, lambda_min, C)) > 0:
-            lambda_min -= delta
-            # lambda_max = lambda_min
+        r = self.inner_product(y, alpha_projected)
 
-        while self.inner_product(y, self.alpha_lambda(beta, y, lambda_max, C)) < 0:
-            lambda_max += delta
-            # lambda_min = lambda_max
+        # Bracketing phase
+        lambda_val = 0
+        lambda_min, lambda_max = None, None
 
-        for _ in range(self.max_iter):
-            lambda_hat = 0.5 * (lambda_min + lambda_max)
-            inner_prod = self.inner_product(
-                y, self.alpha_lambda(beta, y, lambda_hat, C)
-            )
+        if r < 0:
+            lambda_min = lambda_val
+            r_min = r
+            lambda_val += delta
+            alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
+            r = self.inner_product(y, alpha_lambda)
+            while r < 0:
+                lambda_min = lambda_val
+                r_min = r
+                s = max(r_min / r - 1, 0.1)
+                delta += delta / s
+                lambda_val += delta
+                alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
+                r = self.inner_product(y, alpha_lambda)
 
-            if abs(inner_prod) < self.tol:
-                return self.alpha_lambda(beta, y, lambda_hat, C)
-            elif inner_prod < 0:
-                lambda_min = lambda_hat
-            else:
-                lambda_max = lambda_hat
+            lambda_max = lambda_val
+            r_max = r
+        else:
+            lambda_max = lambda_val
+            r_max = r
+            lambda_val -= delta
+            alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
+            r = self.inner_product(y, alpha_lambda)
+            while r > 0:
+                lambda_max = lambda_val
+                r_max = r
+                s = max(r_max / r - 1, 0.1)
+                delta += delta / s
+                lambda_val -= delta
+                alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
+                r = self.inner_product(y, alpha_lambda)
 
-        return self.alpha_lambda(beta, y, lambda_hat, C)
+            lambda_min = lambda_val
+            r_min = r
+
+        return alpha_lambda
 
     def predict(self, X):
         """
