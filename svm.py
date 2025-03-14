@@ -20,6 +20,7 @@ class SVM:
         self.alpha = None  # Lagrange multipliers (for dual)
         self.support_vectors = None  # Support vectors (for dual)
         self.support_y = None  # Support vector labels (for dual)
+        self.support_alphas = None  # Support vector Lagrange multipliers (for dual)
 
     def fit(self, X, y, tau=0.001):
         """
@@ -101,11 +102,11 @@ class SVM:
 
         self.support_y = y[support_idx]
 
-        self.support_alpha = self.alpha[support_idx]
+        self.support_alphas = self.alpha[support_idx]
 
         # Compute w correctly
         self.w = np.sum(
-            (self.support_alpha[:, None] * self.support_y[:, None])
+            (self.support_alphas[:, None] * self.support_y[:, None])
             * self.support_vectors,
             axis=0,
         )
@@ -166,6 +167,53 @@ class SVM:
         """
         return np.dot(y, alpha_lambda)
 
+    def bracketing_phase(
+        self, alpha, y, C, delta=0.01, lambda_val=0, lambda_min=None, lambda_max=None
+    ):
+        """
+        Perform the bracketing phase for bisection.
+        """
+        alpha_projected = self.alpha_lambda(alpha, y, 0, C)
+
+        r = self.inner_product(y, alpha_projected)
+
+        # Bracketing phase
+        if r < 0:
+            lambda_min = lambda_val
+            r_min = r
+            lambda_val += delta
+            alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
+            r = self.inner_product(y, alpha_lambda)
+            while r < 0:
+                lambda_min = lambda_val
+                r_min = r
+                s = max(r_min / r - 1, 0.1)
+                delta += delta / s
+                lambda_val += delta
+                alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
+                r = self.inner_product(y, alpha_lambda)
+
+            lambda_max = lambda_val
+            r_max = r
+        else:
+            lambda_max = lambda_val
+            r_max = r
+            lambda_val -= delta
+            alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
+            r = self.inner_product(y, alpha_lambda)
+            while r > 0:
+                lambda_max = lambda_val
+                r_max = r
+                s = max(r_max / r - 1, 0.1)
+                delta += delta / s
+                lambda_val -= delta
+                alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
+                r = self.inner_product(y, alpha_lambda)
+
+            lambda_min = lambda_val
+            r_min = r
+        return lambda_val, lambda_min, lambda_max, r_min, r_max
+
     def secant_phase(
         self, alpha, y, C, delta, r_min, r_max, lambda_val, lambda_min, lambda_max
     ):
@@ -220,48 +268,10 @@ class SVM:
         """
         Project the alpha vector onto the feasible set using bisection.
         """
-        alpha_projected = self.alpha_lambda(alpha, y, 0, C)
-
-        r = self.inner_product(y, alpha_projected)
-
         # Bracketing phase
-        lambda_val = 0
-        lambda_min, lambda_max = None, None
-
-        if r < 0:
-            lambda_min = lambda_val
-            r_min = r
-            lambda_val += delta
-            alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
-            r = self.inner_product(y, alpha_lambda)
-            while r < 0:
-                lambda_min = lambda_val
-                r_min = r
-                s = max(r_min / r - 1, 0.1)
-                delta += delta / s
-                lambda_val += delta
-                alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
-                r = self.inner_product(y, alpha_lambda)
-
-            lambda_max = lambda_val
-            r_max = r
-        else:
-            lambda_max = lambda_val
-            r_max = r
-            lambda_val -= delta
-            alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
-            r = self.inner_product(y, alpha_lambda)
-            while r > 0:
-                lambda_max = lambda_val
-                r_max = r
-                s = max(r_max / r - 1, 0.1)
-                delta += delta / s
-                lambda_val -= delta
-                alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
-                r = self.inner_product(y, alpha_lambda)
-
-            lambda_min = lambda_val
-            r_min = r
+        lambda_val, lambda_min, lambda_max, r_min, r_max = self.bracketing_phase(
+            alpha, y, C, delta
+        )
 
         # Secant phase for more precise lambda selection
         lambda_val = self.secant_phase(
@@ -291,21 +301,17 @@ class SVM:
             return np.dot(X, self.w) + self.b
 
         elif self.mode == "dual":
-            support_idx = (self.alpha > 1e-5) & (
-                self.alpha < self.C
-            )  # Mask for support vectors
-            support_alphas = self.alpha[support_idx]
-            support_vectors = self.support_vectors  # Already filtered in `_fit_dual`
-            support_y = self.support_y  # Already filtered in `_fit_dual`
-
             decision_values = np.zeros(X.shape[0])
             for i in range(X.shape[0]):
                 decision_values[i] = (
                     np.sum(
-                        support_alphas
-                        * support_y
+                        self.support_alphas
+                        * self.support_y
                         * np.array(
-                            [self._kernel_function(sv, X[i]) for sv in support_vectors]
+                            [
+                                self._kernel_function(sv, X[i])
+                                for sv in self.support_vectors
+                            ]
                         )
                     )
                     + self.b
