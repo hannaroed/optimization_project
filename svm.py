@@ -3,7 +3,7 @@ import numpy as np
 
 class SVM:
     def __init__(
-        self, C=1.0, kernel="linear", lr=0.01, tol=1e-2, max_iter=1000, mode="primal"
+        self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal"
     ):
         """
         Initialize the SVM model.
@@ -91,15 +91,27 @@ class SVM:
             iter_count += 1
 
         # Compute the weight vector
-        self.w = np.sum((self.alpha[:, None] * y[:, None]) * X, axis=0)
+        # self.w = np.sum((self.alpha[:, None] * y[:, None]) * X, axis=0)
 
         # Compute the bias term
         support_idx = (self.alpha > 1e-5) & (self.alpha < self.C)
-        self.b = np.mean(y[support_idx] - np.dot(X[support_idx], self.w))
+        # self.b = np.mean(y[support_idx] - np.dot(X[support_idx], self.w))
 
         self.support_vectors = X[support_idx]
 
         self.support_y = y[support_idx]
+
+        self.support_alpha = self.alpha[support_idx]
+
+        # Compute w correctly
+        self.w = np.sum(
+            (self.support_alpha[:, None] * self.support_y[:, None])
+            * self.support_vectors,
+            axis=0,
+        )
+
+        # Compute bias correctly
+        self.b = np.mean(self.support_y - np.dot(self.support_vectors, self.w))
 
         return self.w, self.b
 
@@ -121,10 +133,12 @@ class SVM:
         s = alpha_new - alpha
         z = grad_alpha_new - grad_alpha
 
+        denom = np.dot(s, z) + 1e-8
+
         if np.dot(s, z) <= 0:
             return tau_max
         else:
-            tau = np.dot(s, s) / np.dot(s, z)
+            tau = np.dot(s, s) / denom
             tau = max(tau_min, min(tau, tau_max))
         return tau
 
@@ -151,6 +165,56 @@ class SVM:
         Compute the inner product <y, alpha(lambda)>.
         """
         return np.dot(y, alpha_lambda)
+
+    def secant_phase(
+        self, alpha, y, C, delta, r_min, r_max, lambda_val, lambda_min, lambda_max
+    ):
+        """
+        Perform the secant phase for bisection.
+        """
+        s = 1 - r_min / r_max
+        delta = delta / s
+        lambda_val = lambda_max - delta
+        r = self.inner_product(y, self.alpha_lambda(alpha, y, lambda_val, C))
+        while abs(r) > self.tol:
+            if r > 0:
+                if s <= 2:
+                    lambda_max = lambda_val
+                    r_max = r
+                    s = 1 - r_min / r_max
+                    delta = (lambda_max - lambda_min) / s
+                    lambda_val = lambda_max - delta
+                else:
+                    s = max(r_max / r - 1, 0.1)
+                    delta = (lambda_max - lambda_val) / s
+                    lambda_new = max(
+                        lambda_val - delta, 0.75 * lambda_min + 0.25 * lambda_val
+                    )
+                    lambda_max = lambda_val
+                    r_max = r
+                    lambda_val = lambda_new
+                    s = (lambda_max - lambda_min) / (lambda_max - lambda_val)
+            else:
+                if s >= 2:
+                    lambda_min = lambda_val
+                    r_min = r
+                    s = 1 - r_min / r_max
+                    delta = (lambda_max - lambda_min) / s
+                    lambda_val = lambda_max - delta
+                else:
+                    s = max(r_min / r - 1, 0.1)
+                    delta = (lambda_val - lambda_min) / s
+                    lambda_new = min(
+                        lambda_val + delta, 0.75 * lambda_max + 0.25 * lambda_val
+                    )
+                    lambda_min = lambda_val
+                    r_min = r
+                    lambda_val = lambda_new
+                    s = (lambda_max - lambda_min) / (lambda_max - lambda_val)
+
+            r = self.inner_product(y, self.alpha_lambda(alpha, y, lambda_val, C))
+
+        return lambda_val
 
     def project_onto_feasible_set(self, alpha, y, C, delta=0.01):
         """
@@ -199,7 +263,12 @@ class SVM:
             lambda_min = lambda_val
             r_min = r
 
-        return alpha_lambda
+        # Secant phase for more precise lambda selection
+        lambda_val = self.secant_phase(
+            alpha, y, C, delta, r_min, r_max, lambda_val, lambda_min, lambda_max
+        )
+
+        return self.alpha_lambda(alpha, y, lambda_val, C)
 
     def predict(self, X):
         """
