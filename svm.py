@@ -93,6 +93,9 @@ class SVM:
             mu_k *= 10
             tau_k *= 0.1
 
+        self.w = w
+        self.b = b
+
         return self.w, self.b
 
     def _fit_dual(self, X, y, d_intial: float, tau: float = 0.001):
