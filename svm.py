@@ -109,7 +109,9 @@ class SVM:
         # Compute the bias term
         self.b = np.mean(self.support_y - np.dot(self.support_vectors, self.w))
 
-        print(f"Converged after {iter_count} iterations: Difference between alpha updates = {diff}")
+        print(
+            f"Converged after {iter_count} iterations: Difference between alpha updates = {diff}"
+        )
 
         return self.w, self.b
 
@@ -139,6 +141,11 @@ class SVM:
             tau = np.dot(s, s) / denom
             tau = max(tau_min, min(tau, tau_max))
         return tau
+
+    def better_step_length_selection(
+        self, G, Y, alpha: float, alpha_new: float
+    ) -> float:
+        pass
 
     def compute_gram_matrix(self, X: np.ndarray) -> np.ndarray:
         """
@@ -274,7 +281,6 @@ class SVM:
         lambda_val = self.secant_phase(
             alpha, y, C, delta, r_min, r_max, lambda_val, lambda_min, lambda_max
         )
-
         return self.alpha_lambda(alpha, y, lambda_val, C)
 
     def predict(self, X):
