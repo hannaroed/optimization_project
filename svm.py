@@ -1,8 +1,7 @@
 import numpy as np
 
-
 class SVM:
-    def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal", sigma=1.0, s=1.0):
+    def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal_SGD", sigma=1.0, s=1.0):
         """
         Initialize the SVM model.
         """
@@ -31,14 +30,16 @@ class SVM:
             y (numpy array): Labels (-1 or +1).
         """
 
-        if self.mode == "primal":
-            self._fit_primal(X, y)
+        if self.mode == "primal_SGD":
+            self._fit_primal_SGD(X, y)
+        elif self.mode == "primal_QP":
+            self._fit_primal_QP(X, y)
         elif self.mode == "dual":
-            self._fit_dual(X, y, tau)  # Placeholder for future dual implementation
+            self._fit_dual(X, y, tau)
         else:
-            raise ValueError("Mode must be 'primal' or 'dual'.")
+            raise ValueError("Mode must be 'primal_SGD', 'primal_QP' or 'dual'.")
 
-    def _fit_primal(self, X, y):
+    def _fit_primal_SGD(self, X, y):
         """Train the SVM using Stochastic Gradient Descent (SGD) for the primal formulation."""
 
         M, d = X.shape  # Number of samples, number of features
@@ -56,6 +57,41 @@ class SVM:
                 else:
                     # Update for correctly classified points (regularization)
                     self.w = (1 - self.lr) * self.w
+
+        return self.w, self.b
+
+    def _fit_primal_QP(self, X, y):
+        """
+        Train the SVM using the Quadratic Penalty (QP) method for the primal formulation."""
+
+        M, d = X.shape
+        w = np.zeros(d)
+        b = 0.0
+        mu_k = 1.0  # Initial penalty parameter
+        tau_k = self.tol  # Use tolerance from the class
+
+        for k in range(self.max_iter):
+            # Compute the penalized objective function Q(w, b, mu_k)
+            margin = y * (np.dot(X, w) + b)
+            hinge_loss = np.maximum(0, 1 - margin) ** 2  # Quadratic penalty term
+
+            # Compute gradients
+            indicator = margin < 1
+            grad_w = w - self.C * np.sum((2 * (1 - margin) * y * X.T * indicator), axis=1)
+            grad_b = -self.C * np.sum(2 * (1 - margin) * y * indicator)
+
+            # Update weights and bias using gradient descent
+            w -= self.lr * grad_w
+            b -= self.lr * grad_b
+
+            # Check stopping condition
+            grad_norm = np.linalg.norm(np.append(grad_w, grad_b))
+            if grad_norm <= tau_k:
+                break  # Convergence reached
+
+            # Increase penalty parameter and tighten tolerance
+            mu_k *= 10
+            tau_k *= 0.1
 
         return self.w, self.b
 
@@ -294,7 +330,7 @@ class SVM:
         Returns:
         - Decision values: f(X) (M_test x 1)
         """
-        if self.mode == "primal":
+        if self.mode == "primal_SGD" or self.mode == "primal_QP":
             return np.dot(X, self.w) + self.b
 
         elif self.mode == "dual":
@@ -317,7 +353,7 @@ class SVM:
             return decision_values
 
         else:
-            raise ValueError("Mode must be 'primal' or 'dual'.")
+            raise ValueError("Mode must be 'primal_SGD', 'primal_QP' or 'dual'.")
 
     def _kernel_function(self, x1, x2):
         """
