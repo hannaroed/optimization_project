@@ -66,7 +66,18 @@ class SVM:
         M = X.shape[0]
         G = self.compute_gram_matrix(X)  # Compute the Gram matrix
         Y = np.diag(y)
+        M_1 = np.ones(M)
         self.alpha = np.zeros(M)  # Initialize Lagrange multipliers
+        f_ref = float("inf")  # Reference function value
+        f_best = self.inner_product(
+            self.alpha, Y @ G @ Y @ self.alpha
+        ) - self.inner_product(
+            M_1, self.alpha
+        )  # Best function value
+        f_c = f_best  # Current function value
+        L = 10
+        l = 0
+        theta_k = 1
 
         iter_count = 0
         diff = float("inf")
@@ -79,14 +90,51 @@ class SVM:
             alpha_new = self.project_onto_feasible_set(
                 self.alpha - tau * gradient, y, self.C
             )
+            d_k = alpha_new - self.alpha
+
+            theta_star = self.inner_product(M_1, d_k) - self.inner_product(
+                d_k, Y @ G @ Y @ alpha_new
+            ) / (self.inner_product(d_k, Y @ G @ Y @ d_k) + 1e-8)
+            print(f"Iteration {iter_count}: theta_star = {theta_star}")
+
+            f_k = self.inner_product(
+                alpha_new, Y @ G @ Y @ alpha_new
+            ) - self.inner_product(M_1, alpha_new)
+
+            theta_k = max(0, min(1, theta_star))
+
+            if f_k < f_best:
+                f_best = f_k
+                f_c = f_k
+                l = 0
+
+            if f_k >= f_best:
+                f_c = max(f_c, f_k)
+                l += 1
+
+            if l == L:
+                f_ref = f_c
+                f_c = f_k
+                l = 0
+
+            if (
+                self.inner_product(alpha_new + d_k, Y @ G @ Y @ alpha_new)
+                - self.inner_product(M_1, alpha_new)
+                > f_ref
+            ):
+                print("Line search triggered")
+                alpha_new = self.alpha + theta_k * d_k
 
             # Step length selection (Barzilai–Borwein method)
             tau = self.step_length_selection(G, Y, self.alpha, alpha_new)
-            # print(f"Iteration {iter_count}: Step length = {tau}")
+            print(f"Iteration {iter_count}: Step length = {tau}")
 
             # Check for convergence
-            diff = np.linalg.norm(alpha_new - self.alpha)
-            # print(f"Iteration {iter_count}: Difference between alpha updates = {diff}")
+            diff = np.linalg.norm(
+                self.project_onto_feasible_set(alpha_new - gradient, y, self.C)
+                - alpha_new
+            )
+            print(f"Iteration {iter_count}: Difference between alpha updates = {diff}")
 
             self.alpha = alpha_new
             iter_count += 1
@@ -121,7 +169,7 @@ class SVM:
         """
 
         tau_min = 1e-3
-        tau_max = 1
+        tau_max = 0.1
 
         # Compute gradient at alpha^(k)
         grad_alpha = Y @ G @ Y @ alpha - np.ones_like(alpha)
@@ -141,11 +189,6 @@ class SVM:
             tau = np.dot(s, s) / denom
             tau = max(tau_min, min(tau, tau_max))
         return tau
-
-    def better_step_length_selection(
-        self, G, Y, alpha: float, alpha_new: float
-    ) -> float:
-        pass
 
     def compute_gram_matrix(self, X: np.ndarray) -> np.ndarray:
         """
