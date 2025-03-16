@@ -2,7 +2,7 @@ import numpy as np
 
 
 class SVM:
-    def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal"):
+    def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal", sigma=1.0, s=1.0):
         """
         Initialize the SVM model.
         """
@@ -19,8 +19,8 @@ class SVM:
         self.support_vectors = None # Support vectors (for dual)
         self.support_y = None # Support vector labels (for dual)
         self.support_alphas = None # Support vector Lagrange multipliers (for dual)
-        self.sigma = 1.0 # Kernel bandwidth
-        self.s = 1.0 # Kernel parameter
+        self.sigma = sigma # Kernel bandwidth
+        self.s = s # Kernel parameter
 
     def fit(self, X, y, tau=0.001):
         """
