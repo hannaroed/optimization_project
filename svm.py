@@ -172,7 +172,7 @@ class SVM:
         """
         alpha_projected = self._alpha_lambda(alpha, y, 0, C)
 
-        r = self.inner_product(y, alpha_projected)
+        r = self._inner_product(y, alpha_projected)
 
         # Bracketing phase
         if r < 0:
@@ -188,7 +188,7 @@ class SVM:
                 delta += delta / s
                 lambda_val += delta
                 alpha_lambda = self._alpha_lambda(alpha, y, lambda_val, C)
-                r = self.inner_product(y, alpha_lambda)
+                r = self._inner_product(y, alpha_lambda)
 
             lambda_max = lambda_val
             r_max = r
