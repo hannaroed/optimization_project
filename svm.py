@@ -2,25 +2,25 @@ import numpy as np
 
 
 class SVM:
-    def __init__(
-        self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal"
-    ):
+    def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal"):
         """
         Initialize the SVM model.
         """
 
-        self.C = C  # Regularization parameter
+        self.C = C # Regularization parameter
         self.kernel = kernel
-        self.lr = lr  # Learning rate
-        self.tol = tol  # Tolerance for stopping criterion
-        self.max_iter = max_iter  # Max iterations
+        self.lr = lr # Learning rate
+        self.tol = tol # Tolerance for stopping criterion
+        self.max_iter = max_iter # Max iterations
         self.mode = mode
-        self.w = None  # Weight vector
-        self.b = 0  # Bias term
-        self.alpha = None  # Lagrange multipliers (for dual)
-        self.support_vectors = None  # Support vectors (for dual)
-        self.support_y = None  # Support vector labels (for dual)
-        self.support_alphas = None  # Support vector Lagrange multipliers (for dual)
+        self.w = None # Weight vector
+        self.b = 0 # Bias term
+        self.alpha = None # Lagrange multipliers (for dual)
+        self.support_vectors = None # Support vectors (for dual)
+        self.support_y = None # Support vector labels (for dual)
+        self.support_alphas = None # Support vector Lagrange multipliers (for dual)
+        self.sigma = 1.0 # Kernel bandwidth
+        self.s = 1.0 # Kernel parameter
 
     def fit(self, X, y, tau=0.001):
         """
@@ -64,7 +64,7 @@ class SVM:
         Train the SVM using Projected Gradient Descent (PGD) for the dual formulation.
         """
         M = X.shape[0]
-        G = self.compute_gram_matrix(X)  # Compute the Gram matrix
+        G = self._compute_gram_matrix(X)  # Compute the Gram matrix
         Y = np.diag(y)
         self.alpha = np.zeros(M)  # Initialize Lagrange multipliers
 
@@ -76,12 +76,12 @@ class SVM:
             gradient = Y @ G @ Y @ self.alpha - np.ones_like(self.alpha)
 
             # Update the Lagrange multipliers
-            alpha_new = self.project_onto_feasible_set(
+            alpha_new = self._project_onto_feasible_set(
                 self.alpha - tau * gradient, y, self.C
             )
 
             # Step length selection (Barzilai–Borwein method)
-            tau = self.step_length_selection(G, Y, self.alpha, alpha_new)
+            tau = self._step_length_selection(G, Y, self.alpha, alpha_new)
             # print(f"Iteration {iter_count}: Step length = {tau}")
 
             # Check for convergence
@@ -113,7 +113,7 @@ class SVM:
 
         return self.w, self.b
 
-    def step_length_selection(self, G, Y, alpha: float, alpha_new: float) -> float:
+    def _step_length_selection(self, G, Y, alpha: float, alpha_new: float) -> float:
         """
         Select the step length for the projected gradient descent using Barzilai-Borwein
         """
@@ -140,7 +140,7 @@ class SVM:
             tau = max(tau_min, min(tau, tau_max))
         return tau
 
-    def compute_gram_matrix(self, X: np.ndarray) -> np.ndarray:
+    def _compute_gram_matrix(self, X: np.ndarray) -> np.ndarray:
         """
         Compute the Gram matrix for the given data points.
         """
@@ -152,25 +152,25 @@ class SVM:
                 G[i, j] = self._kernel_function(X[i], X[j])
         return G
 
-    def alpha_lambda(self, beta, y, lambd, C):
+    def _alpha_lambda(self, beta, y, lambd, C):
         """
         Compute alpha(lambda) based on the given formula.
         """
         return np.minimum(np.maximum(beta + lambd * y, 0), C)
 
-    def inner_product(self, y, alpha_lambda):
+    def _inner_product(self, y, alpha_lambda):
         """
         Compute the inner product <y, alpha(lambda)>.
         """
         return np.dot(y, alpha_lambda)
 
-    def bracketing_phase(
+    def _bracketing_phase(
         self, alpha, y, C, delta=0.01, lambda_val=0, lambda_min=None, lambda_max=None
     ):
         """
         Perform the bracketing phase for bisection.
         """
-        alpha_projected = self.alpha_lambda(alpha, y, 0, C)
+        alpha_projected = self._alpha_lambda(alpha, y, 0, C)
 
         r = self.inner_product(y, alpha_projected)
 
@@ -179,15 +179,15 @@ class SVM:
             lambda_min = lambda_val
             r_min = r
             lambda_val += delta
-            alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
-            r = self.inner_product(y, alpha_lambda)
+            alpha_lambda = self._alpha_lambda(alpha, y, lambda_val, C)
+            r = self._inner_product(y, alpha_lambda)
             while r < 0:
                 lambda_min = lambda_val
                 r_min = r
                 s = max(r_min / r - 1, 0.1)
                 delta += delta / s
                 lambda_val += delta
-                alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
+                alpha_lambda = self._alpha_lambda(alpha, y, lambda_val, C)
                 r = self.inner_product(y, alpha_lambda)
 
             lambda_max = lambda_val
@@ -196,22 +196,22 @@ class SVM:
             lambda_max = lambda_val
             r_max = r
             lambda_val -= delta
-            alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
-            r = self.inner_product(y, alpha_lambda)
+            alpha_lambda = self._alpha_lambda(alpha, y, lambda_val, C)
+            r = self._inner_product(y, alpha_lambda)
             while r > 0:
                 lambda_max = lambda_val
                 r_max = r
                 s = max(r_max / r - 1, 0.1)
                 delta += delta / s
                 lambda_val -= delta
-                alpha_lambda = self.alpha_lambda(alpha, y, lambda_val, C)
-                r = self.inner_product(y, alpha_lambda)
+                alpha_lambda = self._alpha_lambda(alpha, y, lambda_val, C)
+                r = self._inner_product(y, alpha_lambda)
 
             lambda_min = lambda_val
             r_min = r
         return lambda_val, lambda_min, lambda_max, r_min, r_max
 
-    def secant_phase(
+    def _secant_phase(
         self, alpha, y, C, delta, r_min, r_max, lambda_val, lambda_min, lambda_max
     ):
         """
@@ -220,7 +220,7 @@ class SVM:
         s = 1 - r_min / r_max
         delta = delta / s
         lambda_val = lambda_max - delta
-        r = self.inner_product(y, self.alpha_lambda(alpha, y, lambda_val, C))
+        r = self._inner_product(y, self._alpha_lambda(alpha, y, lambda_val, C))
         while abs(r) > self.tol:
             if r > 0:
                 if s <= 2:
@@ -257,34 +257,34 @@ class SVM:
                     lambda_val = lambda_new
                     s = (lambda_max - lambda_min) / (lambda_max - lambda_val)
 
-            r = self.inner_product(y, self.alpha_lambda(alpha, y, lambda_val, C))
+            r = self._inner_product(y, self._alpha_lambda(alpha, y, lambda_val, C))
 
         return lambda_val
 
-    def project_onto_feasible_set(self, alpha, y, C, delta=0.01):
+    def _project_onto_feasible_set(self, alpha, y, C, delta=0.01):
         """
         Project the alpha vector onto the feasible set using bisection.
         """
         # Bracketing phase
-        lambda_val, lambda_min, lambda_max, r_min, r_max = self.bracketing_phase(
+        lambda_val, lambda_min, lambda_max, r_min, r_max = self._bracketing_phase(
             alpha, y, C, delta
         )
 
         # Secant phase for more precise lambda selection
-        lambda_val = self.secant_phase(
+        lambda_val = self._secant_phase(
             alpha, y, C, delta, r_min, r_max, lambda_val, lambda_min, lambda_max
         )
 
-        return self.alpha_lambda(alpha, y, lambda_val, C)
+        return self._alpha_lambda(alpha, y, lambda_val, C)
 
     def predict(self, X):
         """
         Predict class labels using the trained SVM.
         """
 
-        return np.sign(self.decision_function(X))
+        return np.sign(self._decision_function(X))
 
-    def decision_function(self, X):
+    def _decision_function(self, X):
         """
         Compute decision function values for given data points in both Primal and Dual SVM.
 
@@ -326,5 +326,15 @@ class SVM:
 
         if self.kernel == "linear":
             return np.dot(x1, x2)
+        
+        elif self.kernel == "gaussian":
+            return np.exp(-np.linalg.norm(x1 - x2) ** 2 / (2 * self.sigma ** 2))
+
+        elif self.kernel == "laplacian":
+            return np.exp(-np.linalg.norm(x1 - x2) / self.sigma)
+        
+        elif self.kernel == "inverse multiquadratic":
+            return 1 / (self.sigma ** 2 + np.linalg.norm(x1 - x2) ** 2)**self.s
+
         else:
-            raise ValueError("Only 'linear' kernel is supported so far.")
+            raise ValueError("Unsupported kernel function.")
