@@ -92,9 +92,11 @@ class SVM:
             )
             d_k = alpha_new - self.alpha
 
-            theta_star = self.inner_product(M_1, d_k) - self.inner_product(
-                d_k, Y @ G @ Y @ alpha_new
-            ) / (self.inner_product(d_k, Y @ G @ Y @ d_k) + 1e-8)
+            denom = self.inner_product(d_k, Y @ G @ Y @ d_k) + 1e-8
+            theta_star = (
+                self.inner_product(M_1, d_k)
+                - self.inner_product(d_k, Y @ G @ Y @ self.alpha)
+            ) / denom
             print(f"Iteration {iter_count}: theta_star = {theta_star}")
 
             f_k = self.inner_product(
@@ -187,7 +189,7 @@ class SVM:
             return tau_max
         else:
             tau = np.dot(s, s) / denom
-            tau = max(tau_min, min(tau, tau_max))
+            tau = min(max(tau, tau_min), tau_max)
         return tau
 
     def compute_gram_matrix(self, X: np.ndarray) -> np.ndarray:
