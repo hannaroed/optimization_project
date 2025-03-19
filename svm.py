@@ -1,9 +1,6 @@
 import numpy as np
 
 
-def batched_dot_product(x1, x2):
-    return (x1 * x2).sum(axis=-1)
-
 class SVM:
     def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal_SGD", sigma=1.0, s=1.0):
         """
@@ -203,7 +200,7 @@ class SVM:
         """
         Compute the inner product <y, alpha(lambda)>.
         """
-        return np.einsum('...d,...d->...', y, alpha_lambda)
+        return np.sum(y * alpha_lambda, axis=-1)
 
     def _bracketing_phase(
         self, alpha, y, C, delta=0.01, lambda_val=0, lambda_min=None, lambda_max=None
