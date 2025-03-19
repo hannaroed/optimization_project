@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from numpy.random import default_rng
 
 
-def TestLinear(w,b,n_A,n_B,margin,**kwargs):
+def test_linear(w,b,n_A,n_B,margin,**kwargs):
     '''
     
 
@@ -111,7 +111,7 @@ if __name__ == "__main__":
     n_A = 10
     n_B = 8
     margin = 5.e-1
-    listA,listB = TestLinear(w,b,n_A,n_B,margin)
+    listA,listB = test_linear(w,b,n_A,n_B,margin)
     [plt.scatter(x[0],x[1],color="r") for x in listA]
     [plt.scatter(x[0],x[1],color="b") for x in listB]
     plt.show()
