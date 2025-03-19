@@ -184,11 +184,7 @@ class SVM:
         Compute the Gram matrix for the given data points.
         """
 
-        M = X.shape[0]
-        G = np.zeros((M, M))
-        for i in range(M):
-            for j in range(M):
-                G[i, j] = self._kernel_function(X[i], X[j])
+        G = self._kernel_function(X[:, None, ...], X[None, :, ...])
         return G
 
     def _alpha_lambda(self, beta, y, lambd, C):
@@ -364,16 +360,16 @@ class SVM:
         """
 
         if self.kernel == "linear":
-            return np.dot(x1, x2)
+            return np.einsum('...d,...d->...', x1, x2)
         
         elif self.kernel == "gaussian":
-            return np.exp(-np.linalg.norm(x1 - x2) ** 2 / (2 * self.sigma ** 2))
+            return np.exp(-np.linalg.norm(x1 - x2, axis=-1) ** 2 / (2 * self.sigma ** 2))
 
         elif self.kernel == "laplacian":
-            return np.exp(-np.linalg.norm(x1 - x2) / self.sigma)
+            return np.exp(-np.linalg.norm(x1 - x2, axis=-1) / self.sigma)
         
         elif self.kernel == "inverse multiquadratic":
-            return 1 / (self.sigma ** 2 + np.linalg.norm(x1 - x2) ** 2)**self.s
+            return 1 / (self.sigma ** 2 + np.linalg.norm(x1 - x2, axis=-1) ** 2)**self.s
 
         else:
             raise ValueError("Unsupported kernel function.")
