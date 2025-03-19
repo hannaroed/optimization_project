@@ -1,5 +1,9 @@
 import numpy as np
 
+
+def batched_dot_product(x1, x2):
+    return (x1 * x2).sum(axis=-1)
+
 class SVM:
     def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal_SGD", sigma=1.0, s=1.0):
         """
@@ -104,7 +108,6 @@ class SVM:
         """
         M = X.shape[0]
         G = self._compute_gram_matrix(X)  # Compute the Gram matrix
-        Y = np.diag(y)
         self.alpha = np.zeros(M)  # Initialize Lagrange multipliers
 
         iter_count = 0
@@ -112,7 +115,7 @@ class SVM:
 
         while diff > self.tol and iter_count < self.max_iter:
             # Compute the gradient
-            gradient = Y @ G @ Y @ self.alpha - np.ones_like(self.alpha)
+            gradient = y * (G @ (y * self.alpha)) - 1
 
             # Update the Lagrange multipliers
             alpha_new = self._project_onto_feasible_set(
@@ -120,7 +123,6 @@ class SVM:
             )
 
             # Step length selection (Barzilai–Borwein method)
-            tau = self._step_length_selection(G, Y, self.alpha, alpha_new)
             # print(f"Iteration {iter_count}: Step length = {tau}")
 
             # Check for convergence
@@ -152,27 +154,28 @@ class SVM:
 
         return self.w, self.b
 
-    def _step_length_selection(self, G, Y, alpha: float, alpha_new: float) -> float:
+    def _step_length_selection(self, G, y, alpha: float, alpha_new: float) -> float:
         """
         Select the step length for the projected gradient descent using Barzilai-Borwein
         """
 
         tau_min = 1e-3
         tau_max = 1
-
+        
         # Compute gradient at alpha^(k)
-        grad_alpha = Y @ G @ Y @ alpha - np.ones_like(alpha)
+        grad_alpha = y * (G @ (y * alpha)) - 1
 
         # Compute gradient at alpha^(k+1)
-        grad_alpha_new = Y @ G @ Y @ alpha_new - np.ones_like(alpha_new)
+        grad_alpha_new = y * (G @ (y * alpha_new)) - 1
 
         # Compute differences s and z
         s = alpha_new - alpha
         z = grad_alpha_new - grad_alpha
 
-        denom = np.dot(s, z) + 1e-8
+        dp = np.dot(s, z)
+        denom = dp + 1e-8
 
-        if np.dot(s, z) <= 0:
+        if dp <= 0:
             return tau_max
         else:
             tau = np.dot(s, s) / denom
@@ -184,7 +187,10 @@ class SVM:
         Compute the Gram matrix for the given data points.
         """
 
+        # X: (M x d)
+
         G = self._kernel_function(X[:, None, ...], X[None, :, ...])
+        # G: (M x M)
         return G
 
     def _alpha_lambda(self, beta, y, lambd, C):
@@ -197,7 +203,7 @@ class SVM:
         """
         Compute the inner product <y, alpha(lambda)>.
         """
-        return np.dot(y, alpha_lambda)
+        return np.einsum('...d,...d->...', y, alpha_lambda)
 
     def _bracketing_phase(
         self, alpha, y, C, delta=0.01, lambda_val=0, lambda_min=None, lambda_max=None
@@ -360,7 +366,7 @@ class SVM:
         """
 
         if self.kernel == "linear":
-            return np.einsum('...d,...d->...', x1, x2)
+            return np.sum(x1 * x2, axis=-1)
         
         elif self.kernel == "gaussian":
             return np.exp(-np.linalg.norm(x1 - x2, axis=-1) ** 2 / (2 * self.sigma ** 2))
@@ -373,3 +379,33 @@ class SVM:
 
         else:
             raise ValueError("Unsupported kernel function.")
+
+if __name__ == '__main__':
+    import random
+    from test_data import TestLinear
+    w = np.array([1.0, 1.0])
+    b = 1.0
+    n_A = 300
+    n_B = 200
+    margin = 0.5
+
+    random_seed = random.randint(0, 1000)
+    print(f"Using random seed: {random_seed}")
+
+    listA, listB = TestLinear(w, b, n_A, n_B, margin, seed=random_seed)
+
+    # Convert lists to numpy arrays
+    X_A = np.array(listA)
+    X_B = np.array(listB)
+    X = np.vstack((X_A, X_B))
+    y = np.hstack((np.ones(n_A), -np.ones(n_B)))  # Class A = +1, Class B = -1
+
+    # Train the SVM
+    svm = SVM(C=1.0, kernel="linear", lr=0.01, mode="dual", sigma=1.5, s=1.0)
+    svm.fit(X, y)
+
+    # Predict decision boundary
+    xx, yy = np.meshgrid(np.linspace(-8, 8, 50), np.linspace(-8, 8, 50))
+    Z = np.c_[xx.ravel(), yy.ravel()]
+    preds = svm.predict(Z).reshape(xx.shape)
+    print("Finished predict")
