@@ -160,14 +160,17 @@ class SVM:
         tau_max = 1
         
         # Compute gradient at alpha^(k)
-        grad_alpha = y * (G @ (y * alpha)) - 1
-
+        # grad_alpha = y * (G @ (y * alpha)) - 1
         # Compute gradient at alpha^(k+1)
-        grad_alpha_new = y * (G @ (y * alpha_new)) - 1
+        # grad_alpha_new = y * (G @ (y * alpha_new)) - 1
+
+        # Grad alpha diff
+        grad_alpha_diff = y * (G @ (y * (alpha_new - alpha)))
 
         # Compute differences s and z
         s = alpha_new - alpha
-        z = grad_alpha_new - grad_alpha
+        # z = grad_alpha_new - grad_alpha
+        z = grad_alpha_diff
 
         dp = np.dot(s, z)
         denom = dp + 1e-8

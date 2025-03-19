@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from numpy.random import default_rng
 
 
-def test_linear(w,b,n_A,n_B,margin,**kwargs):
+def TestLinear(w,b,n_A,n_B,margin,**kwargs):
     '''
     
 
