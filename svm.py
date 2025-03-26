@@ -1,26 +1,37 @@
 import numpy as np
 from scipy.optimize import minimize_scalar
 
+
 class SVM:
-    def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal_SGD", sigma=1.0, s=1.0):
+    def __init__(
+        self,
+        C=1.0,
+        kernel="linear",
+        lr=0.01,
+        tol=1e-6,
+        max_iter=1000,
+        mode="primal_SGD",
+        sigma=1.0,
+        s=1.0,
+    ):
         """
         Initialize the SVM model.
         """
 
-        self.C = C # Regularization parameter
+        self.C = C  # Regularization parameter
         self.kernel = kernel
-        self.lr = lr # Learning rate
-        self.tol = tol # Tolerance for stopping criterion
-        self.max_iter = max_iter # Max iterations
+        self.lr = lr  # Learning rate
+        self.tol = tol  # Tolerance for stopping criterion
+        self.max_iter = max_iter  # Max iterations
         self.mode = mode
-        self.w = None # Weight vector
-        self.b = 0 # Bias term
-        self.alpha = None # Lagrange multipliers (for dual)
-        self.support_vectors = None # Support vectors (for dual)
-        self.support_y = None # Support vector labels (for dual)
-        self.support_alphas = None # Support vector Lagrange multipliers (for dual)
-        self.sigma = sigma # Kernel bandwidth
-        self.s = s # Kernel parameter
+        self.w = None  # Weight vector
+        self.b = 0  # Bias term
+        self.alpha = None  # Lagrange multipliers (for dual)
+        self.support_vectors = None  # Support vectors (for dual)
+        self.support_y = None  # Support vector labels (for dual)
+        self.support_alphas = None  # Support vector Lagrange multipliers (for dual)
+        self.sigma = sigma  # Kernel bandwidth
+        self.s = s  # Kernel parameter
 
         self.tau_min = 1e-10
         self.tau_max = 1e10
@@ -68,7 +79,8 @@ class SVM:
 
     def _fit_primal_QP(self, X, y):
         """
-        Train the SVM using the Quadratic Penalty (QP) method for the primal formulation."""
+        Train the SVM using the Quadratic Penalty (QP) method for the primal formulation.
+        """
 
         M, d = X.shape
         w = np.zeros(d)
@@ -83,7 +95,9 @@ class SVM:
 
             # Compute gradients
             indicator = margin < 1
-            grad_w = w - self.C * np.sum((2 * (1 - margin) * y * X.T * indicator), axis=1)
+            grad_w = w - self.C * np.sum(
+                (2 * (1 - margin) * y * X.T * indicator), axis=1
+            )
             grad_b = -self.C * np.sum(2 * (1 - margin) * y * indicator)
 
             # Update weights and bias using gradient descent
@@ -111,6 +125,14 @@ class SVM:
         M = X.shape[0]
         G = self._compute_gram_matrix(X)  # Compute the Gram matrix
         self.alpha = np.zeros(M)  # Initialize Lagrange multipliers
+        f_ref = np.inf
+        f_best = 0.5 * np.dot(self.alpha, y * (G @ (y * self.alpha))) - np.sum(
+            self.alpha
+        )
+        f_c = f_best
+        L = 1
+        l = 0
+        theta_k = 1
 
         iter_count = 0
         diff = float("inf")
@@ -128,6 +150,37 @@ class SVM:
             alpha_new = self._project_onto_feasible_set(
                 self.alpha - tau * gradient, y, self.C
             )
+
+            d_k = alpha_new - self.alpha
+
+            f_k = (
+                0.5 * self.alpha.T @ (y * (G @ (y * self.alpha)))
+                - np.ones_like(self.alpha).T @ self.alpha
+            )
+            print(f_k)
+            print(f"f_best: {f_best}")
+
+            if f_k < f_best:
+                f_best = f_k
+                f_c = f_k
+                l = 0
+
+            if f_k >= f_best:
+                f_c = max(f_c, f_k)
+                l += 1
+
+            if l == L:
+                f_ref = f_c
+                f_c = f_k
+                l = 0
+
+            if (
+                0.5 * self.alpha.T @ (y * (G @ (y * self.alpha)))
+                - np.ones_like(self.alpha).T @ self.alpha
+                > f_ref
+            ):
+                print("Line search triggered")
+                alpha_new = self.alpha + theta_k * d_k
 
             # Compute difference for convergence check
             diff = np.linalg.norm(alpha_new - self.alpha)
@@ -160,6 +213,13 @@ class SVM:
         print(f"Converged after {iter_count} iterations: Δα = {diff:.4e}")
 
         return self.w, self.b
+
+    def _line_search(self, d_k, M_1, y, G, alpha):
+        """
+        Perform line search to find the optimal step size.
+        """
+        theta = (M_1.T * d_k - d_k.T * y @ G * y * alpha) / (d_k.T * y @ G * y @ d_k)
+        return min(max(theta, 0), 1)
 
     def _step_length_selection(self, G, y, alpha_old, alpha_new):
         """
@@ -373,22 +433,24 @@ class SVM:
 
         if self.kernel == "linear":
             return np.sum(x1 * x2, axis=-1)
-        
+
         elif self.kernel == "gaussian":
-            return np.exp(-np.linalg.norm(x1 - x2, axis=-1) ** 2 / (2 * self.sigma ** 2))
+            return np.exp(-np.linalg.norm(x1 - x2, axis=-1) ** 2 / (2 * self.sigma**2))
 
         elif self.kernel == "laplacian":
             return np.exp(-np.linalg.norm(x1 - x2, axis=-1) / self.sigma)
-        
+
         elif self.kernel == "inverse multiquadratic":
-            return 1 / (self.sigma ** 2 + np.linalg.norm(x1 - x2, axis=-1) ** 2)**self.s
+            return 1 / (self.sigma**2 + np.linalg.norm(x1 - x2, axis=-1) ** 2) ** self.s
 
         else:
             raise ValueError("Unsupported kernel function.")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import random
     from test_data import TestLinear
+
     w = np.array([1.0, 1.0])
     b = 1.0
     n_A = 300
