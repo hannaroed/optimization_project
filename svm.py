@@ -1,5 +1,5 @@
 import numpy as np
-
+from scipy.optimize import minimize_scalar
 
 class SVM:
     def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal_SGD", sigma=1.0, s=1.0):
@@ -22,6 +22,11 @@ class SVM:
         self.sigma = sigma # Kernel bandwidth
         self.s = s # Kernel parameter
 
+        self.tau_min = 1e-10
+        self.tau_max = 1e10
+        self._s_prev = None
+        self._z_prev = None
+
     def fit(self, X, y, tau=0.001):
         """
         Train the SVM model.
@@ -36,7 +41,7 @@ class SVM:
         elif self.mode == "primal_QP":
             self._fit_primal_QP(X, y)
         elif self.mode == "dual":
-            self._fit_dual(X, y, tau)
+            self._fit_dual(X, y)
         else:
             raise ValueError("Mode must be 'primal_SGD', 'primal_QP' or 'dual'.")
 
@@ -99,9 +104,9 @@ class SVM:
 
         return self.w, self.b
 
-    def _fit_dual(self, X, y, d_intial: float, tau: float = 0.001):
+    def _fit_dual(self, X, y):
         """
-        Train the SVM using Projected Gradient Descent (PGD) for the dual formulation.
+        Train the SVM using Projected Gradient Descent (PGD) with adaptive step length (Barzilai-Borwein) for the dual formulation.
         """
         M = X.shape[0]
         G = self._compute_gram_matrix(X)  # Compute the Gram matrix
@@ -109,32 +114,37 @@ class SVM:
 
         iter_count = 0
         diff = float("inf")
+        tau = 1.0  # Initial step size (add line search)
+
+        # Reset step history
+        self._s_prev = None
+        self._z_prev = None
 
         while diff > self.tol and iter_count < self.max_iter:
-            # Compute the gradient
+            # Compute gradient of the dual objective
             gradient = y * (G @ (y * self.alpha)) - 1
 
-            # Update the Lagrange multipliers
+            # Projected gradient step
             alpha_new = self._project_onto_feasible_set(
                 self.alpha - tau * gradient, y, self.C
             )
 
-            # Step length selection (Barzilai–Borwein method)
-            # print(f"Iteration {iter_count}: Step length = {tau}")
-
-            # Check for convergence
+            # Compute difference for convergence check
             diff = np.linalg.norm(alpha_new - self.alpha)
-            # print(f"Iteration {iter_count}: Difference between alpha updates = {diff}")
 
+            # Update step length using enhanced BB method
+            tau = self._step_length_selection(G, y, self.alpha, alpha_new)
+
+            # Update alpha and iteration counter
             self.alpha = alpha_new
             iter_count += 1
 
+            print(f"Iteration {iter_count}: τ = {tau:.4e}, Δα = {diff:.4e}")
+
+        # Identify support vectors
         support_idx = (self.alpha > 1e-5) & (self.alpha < self.C)
-
         self.support_vectors = X[support_idx]
-
         self.support_y = y[support_idx]
-
         self.support_alphas = self.alpha[support_idx]
 
         # Compute the weight vector
@@ -147,39 +157,35 @@ class SVM:
         # Compute the bias term
         self.b = np.mean(self.support_y - np.dot(self.support_vectors, self.w))
 
-        print(f"Converged after {iter_count} iterations: Difference between alpha updates = {diff}")
+        print(f"Converged after {iter_count} iterations: Δα = {diff:.4e}")
 
         return self.w, self.b
 
-    def _step_length_selection(self, G, y, alpha: float, alpha_new: float) -> float:
+    def _step_length_selection(self, G, y, alpha_old, alpha_new):
         """
-        Select the step length for the projected gradient descent using Barzilai-Borwein
+        Enhanced Barzilai-Borwein step size using current and previous s, z values.
         """
+        s = alpha_new - alpha_old
+        z = y * (G @ (y * s))  # Gradient difference approximation
 
-        tau_min = 1e-3
-        tau_max = 1
-        
-        # Compute gradient at alpha^(k)
-        # grad_alpha = y * (G @ (y * alpha)) - 1
-        # Compute gradient at alpha^(k+1)
-        # grad_alpha_new = y * (G @ (y * alpha_new)) - 1
-
-        # Grad alpha diff
-        grad_alpha_diff = y * (G @ (y * (alpha_new - alpha)))
-
-        # Compute differences s and z
-        s = alpha_new - alpha
-        # z = grad_alpha_new - grad_alpha
-        z = grad_alpha_diff
-
-        dp = np.dot(s, z)
-        denom = dp + 1e-8
-
-        if dp <= 0:
-            return tau_max
+        # Store current s and z for next iteration
+        if self._s_prev is not None and self._z_prev is not None:
+            num = np.dot(s, s) + np.dot(self._s_prev, self._s_prev)
+            denom = np.dot(s, z) + np.dot(self._z_prev, self._z_prev)
         else:
-            tau = np.dot(s, s) / denom
-            tau = max(tau_min, min(tau, tau_max))
+            num = np.dot(s, s)
+            denom = np.dot(s, z)
+
+        self._s_prev = s
+        self._z_prev = z
+
+        if denom <= 1e-10:
+            return self.tau_max
+
+        tau = num / denom
+        print(f"τ = {tau:.4e}")
+        tau = min(max(tau, self.tau_min), self.tau_max)
+
         return tau
 
     def _compute_gram_matrix(self, X: np.ndarray) -> np.ndarray:
