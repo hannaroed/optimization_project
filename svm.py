@@ -22,8 +22,8 @@ class SVM:
         self.sigma = sigma # Kernel bandwidth
         self.s = s # Kernel parameter
 
-        self.tau_min = 1e-10
-        self.tau_max = 1e10
+        self.tau_min = 1e-5
+        self.tau_max = 1e5
         self._s_prev = None
         self._z_prev = None
 
@@ -120,7 +120,15 @@ class SVM:
         self._s_prev = None
         self._z_prev = None
 
+        f_best = self._dual_objective(G, y, self.alpha)
+        print(f'f_best={f_best}')
+        f_c = f_best
+        f_ref = float("inf") # Start as infinity
+        L = 10 # Number of allowed iterations without improvement
+        ell = 0 # Counter for non-improving steps
+
         while diff > self.tol and iter_count < self.max_iter:
+
             # Compute gradient of the dual objective
             gradient = y * (G @ (y * self.alpha)) - 1
 
@@ -128,6 +136,32 @@ class SVM:
             alpha_new = self._project_onto_feasible_set(
                 self.alpha - tau * gradient, y, self.C
             )
+
+            f_k = self._dual_objective(G, y, self.alpha)
+
+            if f_k < f_best:
+                f_best = f_k
+                f_c = f_k
+                ell = 0
+            else:
+                f_c = max(f_c, f_k)
+                ell += 1
+
+            if ell == L:
+                f_ref = f_c
+                f_c = f_k
+                ell = 0
+
+            f_ad = self._dual_objective(G, y, alpha_new)
+            print(f'f_k={f_k}, f_ref={f_ref}, f_best={f_best}, f_ad={f_ad}')
+
+            if f_ad > f_ref:
+                print("Line search triggered")
+                # Perform exact line search in direction d = alpha_new - alpha
+                d = alpha_new - self.alpha
+                theta = self._exact_line_search(self.alpha, d, G, y)
+                alpha_new = self._project_onto_feasible_set(self.alpha + theta * d, y, self.C)
+                f_k = self._dual_objective(G, y, alpha_new)  # Recompute after update
 
             # Compute difference for convergence check
             diff = np.linalg.norm(alpha_new - self.alpha)
@@ -160,6 +194,26 @@ class SVM:
         print(f"Converged after {iter_count} iterations: Δα = {diff:.4e}")
 
         return self.w, self.b
+    
+    def _exact_line_search(self, alpha, d, G, y):
+        """
+        Perform exact line search in direction d.
+        """
+        yd = y * d
+        ya = y * alpha
+
+        def f_theta(theta):
+            return 0.5 * (ya + theta * yd) @ G @ (ya + theta * yd) - np.sum(alpha + theta * d)
+
+        res = minimize_scalar(f_theta, bounds=(0, 1), method='bounded')
+        return res.x
+
+    def _dual_objective(self, G, y, alpha):
+        """
+        Compute dual objective value.
+        """
+        return 0.5 * np.dot(alpha, y * (G @ (y * alpha))) - np.sum(alpha)
+
 
     def _step_length_selection(self, G, y, alpha_old, alpha_new):
         """
@@ -182,8 +236,7 @@ class SVM:
         if denom <= 1e-10:
             return self.tau_max
 
-        tau = num / denom
-        print(f"τ = {tau:.4e}")
+        tau = num / (denom + 1e-10)
         tau = min(max(tau, self.tau_min), self.tau_max)
 
         return tau
@@ -274,11 +327,11 @@ class SVM:
                     lambda_max = lambda_val
                     r_max = r
                     s = 1 - r_min / r_max
-                    delta = (lambda_max - lambda_min) / s
+                    delta = (lambda_max - lambda_min) / (s + 1e-10)
                     lambda_val = lambda_max - delta
                 else:
                     s = max(r_max / r - 1, 0.1)
-                    delta = (lambda_max - lambda_val) / s
+                    delta = (lambda_max - lambda_val) / (s + 1e-10)
                     lambda_new = max(
                         lambda_val - delta, 0.75 * lambda_min + 0.25 * lambda_val
                     )
@@ -291,11 +344,11 @@ class SVM:
                     lambda_min = lambda_val
                     r_min = r
                     s = 1 - r_min / r_max
-                    delta = (lambda_max - lambda_min) / s
+                    delta = (lambda_max - lambda_min) / (s + 1e-10)
                     lambda_val = lambda_max - delta
                 else:
                     s = max(r_min / r - 1, 0.1)
-                    delta = (lambda_val - lambda_min) / s
+                    delta = (lambda_val - lambda_min) / (s + 1e-10)
                     lambda_new = min(
                         lambda_val + delta, 0.75 * lambda_max + 0.25 * lambda_val
                     )
