@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize_scalar
+from pprint import pprint
 
 class SVM:
     def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal_SGD", sigma=1.0, s=1.0):
@@ -125,55 +126,55 @@ class SVM:
         f_c = f_best
         f_ref = float("inf") # Start as infinity
         L = 10 # Number of allowed iterations without improvement
-        ell = 0 # Counter for non-improving steps
+        non_improving_steps_counter = 0 # Counter for non-improving steps
 
         while diff > self.tol and iter_count < self.max_iter:
-
             # Compute gradient of the dual objective
             gradient = y * (G @ (y * self.alpha)) - 1
 
             # Projected gradient step
-            alpha_new = self._project_onto_feasible_set(
+            alpha_after = self._project_onto_feasible_set(
                 self.alpha - tau * gradient, y, self.C
             )
 
-            f_k = self._dual_objective(G, y, self.alpha)
+            f_before_step = self._dual_objective(G, y, self.alpha)
+            f_after_step = self._dual_objective(G, y, alpha_after)
 
-            if f_k < f_best:
-                f_best = f_k
-                f_c = f_k
-                ell = 0
-            else:
-                f_c = max(f_c, f_k)
-                ell += 1
+            if f_before_step < f_best:  # Improved using dual
+                f_best = f_before_step
+                f_c = f_before_step
+                non_improving_steps_counter = 0
+            else:  # Didn't improve
+                f_c = max(f_c, f_before_step)
+                non_improving_steps_counter += 1
 
-            if ell == L:
+            if non_improving_steps_counter == L:  # We have not improved for L steps
                 f_ref = f_c
-                f_c = f_k
-                ell = 0
+                f_c = f_before_step
+                non_improving_steps_counter = 0
 
-            f_ad = self._dual_objective(G, y, alpha_new)
-            print(f'f_k={f_k}, f_ref={f_ref}, f_best={f_best}, f_ad={f_ad}')
+            print(f'{f_before_step=} {f_after_step=} {f_ref=}')
 
-            if f_ad > f_ref:
+            if f_after_step > f_ref or iter_count == 0:  # Result is worse than the reference
                 print("Line search triggered")
                 # Perform exact line search in direction d = alpha_new - alpha
-                d = alpha_new - self.alpha
+                d = alpha_after - self.alpha
                 theta = self._exact_line_search(self.alpha, d, G, y)
-                alpha_new = self._project_onto_feasible_set(self.alpha + theta * d, y, self.C)
-                f_k = self._dual_objective(G, y, alpha_new)  # Recompute after update
+                alpha_after = self._project_onto_feasible_set(self.alpha + theta * d, y, self.C)
+                f_before_step = self._dual_objective(G, y, alpha_after)  # Recompute after update
 
             # Compute difference for convergence check
-            diff = np.linalg.norm(alpha_new - self.alpha)
+            diff = np.linalg.norm(alpha_after - self.alpha)
 
             # Update step length using enhanced BB method
-            tau = self._step_length_selection(G, y, self.alpha, alpha_new)
+            tau = self._step_length_selection(G, y, self.alpha, alpha_after)
 
             # Update alpha and iteration counter
-            self.alpha = alpha_new
+            self.alpha = alpha_after
             iter_count += 1
 
             print(f"Iteration {iter_count}: τ = {tau:.4e}, Δα = {diff:.4e}")
+
 
         # Identify support vectors
         support_idx = (self.alpha > 1e-5) & (self.alpha < self.C)
@@ -183,8 +184,7 @@ class SVM:
 
         # Compute the weight vector
         self.w = np.sum(
-            (self.support_alphas[:, None] * self.support_y[:, None])
-            * self.support_vectors,
+            (self.support_alphas[:, None] * self.support_y[:, None]) * self.support_vectors,
             axis=0,
         )
 
@@ -199,6 +199,7 @@ class SVM:
         """
         Perform exact line search in direction d.
         """
+        print("Ran line search")
         yd = y * d
         ya = y * alpha
 
@@ -233,11 +234,8 @@ class SVM:
         self._s_prev = s
         self._z_prev = z
 
-        if denom <= 1e-10:
-            return self.tau_max
-
         tau = num / (denom + 1e-10)
-        tau = min(max(tau, self.tau_min), self.tau_max)
+        tau = np.clip(tau, self.tau_min, self.tau_max)
 
         return tau
 
@@ -258,12 +256,6 @@ class SVM:
         """
         return np.minimum(np.maximum(beta + lambd * y, 0), C)
 
-    def _inner_product(self, y, alpha_lambda):
-        """
-        Compute the inner product <y, alpha(lambda)>.
-        """
-        return np.sum(y * alpha_lambda, axis=-1)
-
     def _bracketing_phase(
         self, alpha, y, C, delta=0.01, lambda_val=0, lambda_min=None, lambda_max=None
     ):
@@ -272,7 +264,7 @@ class SVM:
         """
         alpha_projected = self._alpha_lambda(alpha, y, 0, C)
 
-        r = self._inner_product(y, alpha_projected)
+        r = np.inner(y, alpha_projected)
 
         # Bracketing phase
         if r < 0:
@@ -280,7 +272,7 @@ class SVM:
             r_min = r
             lambda_val += delta
             alpha_lambda = self._alpha_lambda(alpha, y, lambda_val, C)
-            r = self._inner_product(y, alpha_lambda)
+            r = np.inner(y, alpha_lambda)
             while r < 0:
                 lambda_min = lambda_val
                 r_min = r
@@ -288,7 +280,7 @@ class SVM:
                 delta += delta / s
                 lambda_val += delta
                 alpha_lambda = self._alpha_lambda(alpha, y, lambda_val, C)
-                r = self._inner_product(y, alpha_lambda)
+                r = np.inner(y, alpha_lambda)
 
             lambda_max = lambda_val
             r_max = r
@@ -297,7 +289,7 @@ class SVM:
             r_max = r
             lambda_val -= delta
             alpha_lambda = self._alpha_lambda(alpha, y, lambda_val, C)
-            r = self._inner_product(y, alpha_lambda)
+            r = np.inner(y, alpha_lambda)
             while r > 0:
                 lambda_max = lambda_val
                 r_max = r
@@ -305,7 +297,7 @@ class SVM:
                 delta += delta / s
                 lambda_val -= delta
                 alpha_lambda = self._alpha_lambda(alpha, y, lambda_val, C)
-                r = self._inner_product(y, alpha_lambda)
+                r = np.inner(y, alpha_lambda)
 
             lambda_min = lambda_val
             r_min = r
@@ -320,7 +312,7 @@ class SVM:
         s = 1 - r_min / r_max
         delta = delta / s
         lambda_val = lambda_max - delta
-        r = self._inner_product(y, self._alpha_lambda(alpha, y, lambda_val, C))
+        r = np.inner(y, self._alpha_lambda(alpha, y, lambda_val, C))
         while abs(r) > self.tol:
             if r > 0:
                 if s <= 2:
@@ -357,7 +349,7 @@ class SVM:
                     lambda_val = lambda_new
                     s = (lambda_max - lambda_min) / (lambda_max - lambda_val)
 
-            r = self._inner_product(y, self._alpha_lambda(alpha, y, lambda_val, C))
+            r = np.inner(y, self._alpha_lambda(alpha, y, lambda_val, C))
 
         return lambda_val
 
@@ -398,21 +390,14 @@ class SVM:
             return np.dot(X, self.w) + self.b
 
         elif self.mode == "dual":
-            decision_values = np.zeros(X.shape[0])
-            for i in range(X.shape[0]):
-                decision_values[i] = (
-                    np.sum(
-                        self.support_alphas
-                        * self.support_y
-                        * np.array(
-                            [
-                                self._kernel_function(sv, X[i])
-                                for sv in self.support_vectors
-                            ]
-                        )
-                    )
-                    + self.b
-                )
+            print("Mode is dual")
+            sv = self.support_vectors[None, :, :]
+            Xs = X[:, None, :]
+
+            decision_values = np.sum(
+                self.support_alphas * self.support_y * self._kernel_function(sv, Xs),
+                axis=-1
+            ) # + self.b
 
             return decision_values
 
@@ -434,7 +419,7 @@ class SVM:
             return np.exp(-np.linalg.norm(x1 - x2, axis=-1) / self.sigma)
         
         elif self.kernel == "inverse multiquadratic":
-            return 1 / (self.sigma ** 2 + np.linalg.norm(x1 - x2, axis=-1) ** 2)**self.s
+            return 1 / (self.sigma ** 2 + np.linalg.norm(x1 - x2, axis=-1) ** 2) ** self.s
 
         else:
             raise ValueError("Unsupported kernel function.")
