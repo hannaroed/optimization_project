@@ -121,8 +121,9 @@ class SVM:
         self._s_prev = None
         self._z_prev = None
 
-        f_best = self._dual_objective(G, y, self.alpha)
-        print(f'f_best={f_best}')
+        f_prev = self._dual_objective(G, y, self.alpha)
+        f_best = f_prev
+
         f_c = f_best
         f_ref = float("inf") # Start as infinity
         L = 10 # Number of allowed iterations without improvement
@@ -137,7 +138,7 @@ class SVM:
                 self.alpha - tau * gradient, y, self.C
             )
 
-            f_before_step = self._dual_objective(G, y, self.alpha)
+            f_before_step = f_prev
             f_after_step = self._dual_objective(G, y, alpha_after)
 
             if f_before_step < f_best:  # Improved using dual
@@ -156,12 +157,11 @@ class SVM:
             print(f'{f_before_step=} {f_after_step=} {f_ref=}')
 
             if f_after_step > f_ref or iter_count == 0:  # Result is worse than the reference
-                print("Line search triggered")
                 # Perform exact line search in direction d = alpha_new - alpha
                 d = alpha_after - self.alpha
                 theta = self._exact_line_search(self.alpha, d, G, y)
                 alpha_after = self._project_onto_feasible_set(self.alpha + theta * d, y, self.C)
-                f_before_step = self._dual_objective(G, y, alpha_after)  # Recompute after update
+                f_after_step = self._dual_objective(G, y, alpha_after)  # Recompute after update
 
             # Compute difference for convergence check
             diff = np.linalg.norm(alpha_after - self.alpha)
@@ -171,6 +171,7 @@ class SVM:
 
             # Update alpha and iteration counter
             self.alpha = alpha_after
+            f_prev = f_after_step
             iter_count += 1
 
             print(f"Iteration {iter_count}: τ = {tau:.4e}, Δα = {diff:.4e}")
@@ -191,7 +192,6 @@ class SVM:
         # Compute the bias term
         self.b = np.mean(self.support_y - np.dot(self.support_vectors, self.w))
 
-        print(f"Converged after {iter_count} iterations: Δα = {diff:.4e}")
 
         return self.w, self.b
     
@@ -199,7 +199,6 @@ class SVM:
         """
         Perform exact line search in direction d.
         """
-        print("Ran line search")
         yd = y * d
         ya = y * alpha
 
@@ -213,23 +212,25 @@ class SVM:
         """
         Compute dual objective value.
         """
-        return 0.5 * np.dot(alpha, y * (G @ (y * alpha))) - np.sum(alpha)
+        return _dual_objective(G, y, alpha)
 
 
     def _step_length_selection(self, G, y, alpha_old, alpha_new):
         """
         Enhanced Barzilai-Borwein step size using current and previous s, z values.
         """
+        if self._s_prev is not None and self._z_prev is not None:
+            new_s, new_z, tau = _step_length_selection(self._s_prev, self._z_prev, G, y, alpha_old, alpha_new, self.tau_min, self.tau_max)
+            self._s_prev = new_s
+            self._z_prev = new_z
+            return tau
+
         s = alpha_new - alpha_old
         z = y * (G @ (y * s))  # Gradient difference approximation
 
         # Store current s and z for next iteration
-        if self._s_prev is not None and self._z_prev is not None:
-            num = np.dot(s, s) + np.dot(self._s_prev, self._s_prev)
-            denom = np.dot(s, z) + np.dot(self._z_prev, self._z_prev)
-        else:
-            num = np.dot(s, s)
-            denom = np.dot(s, z)
+        num = np.inner(s, s)
+        denom = np.inner(s, z)
 
         self._s_prev = s
         self._z_prev = z
@@ -390,7 +391,6 @@ class SVM:
             return np.dot(X, self.w) + self.b
 
         elif self.mode == "dual":
-            print("Mode is dual")
             sv = self.support_vectors[None, :, :]
             Xs = X[:, None, :]
 
@@ -410,7 +410,9 @@ class SVM:
         """
 
         if self.kernel == "linear":
-            return np.sum(x1 * x2, axis=-1)
+            # print(x1.shape, x2.shape)
+            # return np.tensordot(x1, x2, axes=(, -1))
+            return np.einsum("...i,...i->...", x1, x2)
         
         elif self.kernel == "gaussian":
             return np.exp(-np.linalg.norm(x1 - x2, axis=-1) ** 2 / (2 * self.sigma ** 2))
@@ -424,17 +426,43 @@ class SVM:
         else:
             raise ValueError("Unsupported kernel function.")
 
+
+from numba import njit
+@njit
+def _dual_objective(G, y, alpha):
+    """
+    Compute dual objective value.
+    """
+    return 0.5 * np.dot(alpha, y * (G @ (y * alpha))) - np.sum(alpha)
+
+
+@njit
+def _step_length_selection(s_prev, z_prev, G, y, alpha_old, alpha_new, tau_min, tau_max):
+    """
+    Enhanced Barzilai-Borwein step size using current and previous s, z values.
+    """
+    s = alpha_new - alpha_old
+    z = y * (G @ (y * s))  # Gradient difference approximation
+
+    # Store current s and z for next iteration
+    num = np.dot(s, s) + np.dot(s_prev, s_prev)
+    denom = np.dot(s, z) + np.dot(z_prev, z_prev)
+
+    tau = num / (denom + 1e-10)
+    tau = min(max(tau, tau_min), tau_max)
+
+    return s, z, tau
+
 if __name__ == '__main__':
     import random
     from test_data import TestLinear
     w = np.array([1.0, 1.0])
     b = 1.0
-    n_A = 300
-    n_B = 200
+    n_A = 3000
+    n_B = 2000
     margin = 0.5
 
     random_seed = random.randint(0, 1000)
-    print(f"Using random seed: {random_seed}")
 
     listA, listB = TestLinear(w, b, n_A, n_B, margin, seed=random_seed)
 
@@ -445,7 +473,7 @@ if __name__ == '__main__':
     y = np.hstack((np.ones(n_A), -np.ones(n_B)))  # Class A = +1, Class B = -1
 
     # Train the SVM
-    svm = SVM(C=1.0, kernel="linear", lr=0.01, mode="dual", sigma=1.5, s=1.0)
+    svm = SVM(C=1.0, kernel="linear", lr=0.01, mode="dual", sigma=1.5, s=1.0, max_iter=150)
     svm.fit(X, y)
 
     # Predict decision boundary
@@ -453,3 +481,4 @@ if __name__ == '__main__':
     Z = np.c_[xx.ravel(), yy.ravel()]
     preds = svm.predict(Z).reshape(xx.shape)
     print("Finished predict")
+
