@@ -157,6 +157,7 @@ class SVM:
             print(f'{f_before_step=} {f_after_step=} {f_ref=}')
 
             if f_after_step > f_ref or iter_count == 0:  # Result is worse than the reference
+                print('Line search triggered')
                 # Perform exact line search in direction d = alpha_new - alpha
                 d = alpha_after - self.alpha
                 theta = self._exact_line_search(self.alpha, d, G, y)
@@ -183,15 +184,22 @@ class SVM:
         self.support_y = y[support_idx]
         self.support_alphas = self.alpha[support_idx]
 
-        # Compute the weight vector
-        self.w = np.sum(
-            (self.support_alphas[:, None] * self.support_y[:, None]) * self.support_vectors,
-            axis=0,
-        )
+        if self.kernel == "linear":
+            # Compute the weight vector
+            self.w = np.sum(
+                (self.support_alphas[:, None] * self.support_y[:, None]) * self.support_vectors,
+                axis=0,
+            )
 
-        # Compute the bias term
-        self.b = np.mean(self.support_y - np.dot(self.support_vectors, self.w))
+            # Bias term
+            self.b = np.mean(self.support_y - np.dot(self.support_vectors, self.w))
 
+        else: # Non-linear kernel
+            self.w = None  # No fixed weight vector
+
+            # Bias term
+            K_vals = self._kernel_function(self.support_vectors, self.support_vectors[0])
+            self.b = self.support_y[0] - np.sum(self.support_alphas * self.support_y * K_vals)
 
         return self.w, self.b
     
@@ -397,7 +405,7 @@ class SVM:
             decision_values = np.sum(
                 self.support_alphas * self.support_y * self._kernel_function(sv, Xs),
                 axis=-1
-            ) # + self.b
+            ) + self.b
 
             return decision_values
 
