@@ -489,4 +489,3 @@ if __name__ == '__main__':
     Z = np.c_[xx.ravel(), yy.ravel()]
     preds = svm.predict(Z).reshape(xx.shape)
     print("Finished predict")
-

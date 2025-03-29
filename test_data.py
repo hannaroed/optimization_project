@@ -105,6 +105,66 @@ def TestLinear(w,b,n_A,n_B,margin,**kwargs):
     return(list_A,list_B)
 
 
+def TestNonLinear(n_A, n_B, margin=5.0, n_clusters=3, cluster_spread=0.8, plot_extent=8.0, **kwargs):
+    """
+    Generate two classes as multiple Gaussian clusters (non-linear separability).
+
+    Parameters
+    ----------
+    n_A : int
+        Number of samples in class A.
+    n_B : int
+        Number of samples in class B.
+    margin : float
+        Minimum Euclidean distance between class A and B cluster centers.
+    n_clusters : int
+        Number of clusters per class.
+    cluster_spread : float
+        Standard deviation of each cluster.
+    plot_extent : float
+        Range of space within which cluster centers are sampled.
+    seed : int, optional
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    X_A : (n_A, 2) np.ndarray
+        Samples from class A.
+    X_B : (n_B, 2) np.ndarray
+        Samples from class B.
+    """
+    seed = kwargs.get("seed", 42)
+    rng = default_rng(seed)
+
+    samples_A = np.full(n_clusters, n_A // n_clusters)
+    samples_B = np.full(n_clusters, n_B // n_clusters)
+
+    # Handle any leftover points
+    samples_A[:n_A % n_clusters] += 1
+    samples_B[:n_B % n_clusters] += 1
+
+    X_A = np.empty((0, 2))
+    X_B = np.empty((0, 2))
+
+    for n_a, n_b in zip(samples_A, samples_B):
+        # Generate a center for class A
+        center_A = rng.uniform(-plot_extent, plot_extent, size=2)
+        cluster_A = rng.normal(loc=center_A, scale=cluster_spread, size=(n_a, 2))
+
+        # Generate a center for class B that is at least 'margin' away from A
+        while True:
+            center_B = rng.uniform(-plot_extent, plot_extent, size=2)
+            if np.linalg.norm(center_B - center_A) >= margin:
+                break
+        cluster_B = rng.normal(loc=center_B, scale=cluster_spread, size=(n_b, 2))
+
+        # Stack clusters into final arrays
+        X_A = np.vstack((X_A, cluster_A))
+        X_B = np.vstack((X_B, cluster_B))
+
+    return X_A, X_B
+
+
 if __name__ == "__main__":
     w = np.array([1.,1.])
     b = 1.
