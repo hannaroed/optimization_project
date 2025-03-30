@@ -1,10 +1,11 @@
 import numpy as np
 from scipy.optimize import minimize_scalar
-from pprint import pprint
 from typing import Tuple
 import random
 from test_data import TestLinear, TestNonLinear
 import matplotlib.pyplot as plt
+from numba import njit
+import time
 
 
 class SVM:
@@ -23,20 +24,20 @@ class SVM:
         Initialize the SVM model.
         """
 
-        self.C = C  # Regularization parameter
+        self.C = C # Regularization parameter
         self.kernel = kernel
-        self.lr = lr  # Learning rate
-        self.tol = tol  # Tolerance for stopping criterion
-        self.max_iter = max_iter  # Max iterations
-        self.mode = mode  # primal / dual
-        self.w = None  # Weight vector
-        self.b = 0  # Bias term
-        self.alpha = None  # Lagrange multipliers (for dual)
-        self.support_vectors = None  # Support vectors (for dual)
-        self.support_y = None  # Support vector labels (for dual)
-        self.support_alphas = None  # Support vector Lagrange multipliers (for dual)
-        self.sigma = sigma  # Kernel bandwidth
-        self.s = s  # Kernel parameter
+        self.lr = lr # Learning rate
+        self.tol = tol # Tolerance for stopping criterion
+        self.max_iter = max_iter # Max iterations
+        self.mode = mode # primal / dual
+        self.w = None # Weight vector
+        self.b = 0 # Bias term
+        self.alpha = None # Lagrange multipliers
+        self.support_vectors = None # Support vectors
+        self.support_y = None # Support vector labels
+        self.support_alphas = None # Support vector Lagrange multipliers
+        self.sigma = sigma # Kernel bandwidth
+        self.s = s # Kernel parameter
 
         # Parameters for the Barzilai-Borwein method
         self.tau_min = 1e-5
@@ -77,9 +78,9 @@ class SVM:
             w, b: Weight and bias term vectors.
         """
 
-        M, d = X.shape  # Number of samples, number of features
-        self.w = np.zeros(d)  # Initialize weights
-        self.b = 0  # Initialize bias term
+        M, d = X.shape # Number of samples, number of features
+        self.w = np.zeros(d) # Initialize weights
+        self.b = 0 # Initialize bias term
 
         for _ in range(self.max_iter):
             for i in range(M):
@@ -104,34 +105,34 @@ class SVM:
             y: Labels (-1 or +1).
 
         Returns:
-            w, b: Weight and bias term vectors.
+            w, b: Weight vector and bias term value.
         """
 
         _, d = X.shape
         w = np.zeros(d)
         b = 0.0
-        mu_k = 1.0  # Initial penalty parameter
-        tau_k = self.tol  # Use tolerance from the class
+        mu_k = 1.0 # Initial penalty parameter
+        tau_k = self.tol # Use tolerance from the initialization
 
-        for k in range(self.max_iter):
-            # Compute the penalized objective function Q(w, b, mu_k)
+        for _ in range(self.max_iter):
+            # Compute the margin
             margin = y * (np.dot(X, w) + b)
-
-            # Compute gradients
             indicator = margin < 1
+            
+            # Compute the gradient
             grad_w = w - self.C * np.sum(
                 (2 * (1 - margin) * y * X.T * indicator), axis=1
             )
             grad_b = -self.C * np.sum(2 * (1 - margin) * y * indicator)
 
-            # Update weights and bias using gradient descent
+            # Update weights and bias
             w -= self.lr * grad_w
             b -= self.lr * grad_b
 
             # Check stopping condition
             grad_norm = np.linalg.norm(np.append(grad_w, grad_b))
             if grad_norm <= tau_k:
-                break  # Convergence reached
+                break # Convergence reached
 
             # Increase penalty parameter and tighten tolerance
             mu_k *= 10
@@ -154,13 +155,14 @@ class SVM:
         Returns:
             w, b: Weight and bias term vectors (if kernel != linear, only bias term has a value).
         """
+
         M = X.shape[0]
-        G = self._compute_gram_matrix(X)  # Compute the Gram matrix
-        self.alpha = np.zeros(M)  # Initialize Lagrange multipliers
+        G = self._compute_gram_matrix(X) # Compute the Gram matrix
+        self.alpha = np.zeros(M) # Initialize Lagrange multipliers
 
         iter_count = 0
-        diff = float("inf")  # parameter to measure convergence
-        tau = 1.0  # Initial step size
+        diff = float("inf") # Parameter to measure convergence
+        tau = 1.0 # Initial step size
 
         # Reset step history
         self._s_prev = None
@@ -170,9 +172,9 @@ class SVM:
         f_best = f_prev
 
         f_c = f_best
-        f_ref = float("inf")  # Start as infinity
-        L = 10  # Number of allowed iterations without improvement
-        non_improving_steps_counter = 0  # Counter for non-improving steps
+        f_ref = float("inf") # Start as infinity
+        L = 10 # Number of allowed iterations without improvement
+        non_improving_steps_counter = 0 # Counter for non-improving steps
 
         while diff > self.tol and iter_count < self.max_iter:
             # Compute gradient of the dual objective
@@ -186,23 +188,23 @@ class SVM:
             f_before_step = f_prev
             f_after_step = self._dual_objective(G, y, alpha_after)
 
-            if f_before_step < f_best:  # Improved using dual
+            if f_before_step < f_best: # Improved using dual
                 f_best = f_before_step
                 f_c = f_before_step
                 non_improving_steps_counter = 0
-            else:  # Didn't improve
+            else: # Did not improve
                 f_c = max(f_c, f_before_step)
                 non_improving_steps_counter += 1
 
-            if non_improving_steps_counter == L:  # We have not improved for L steps
+            if non_improving_steps_counter == L: # We have not improved for L steps
                 f_ref = f_c
                 f_c = f_before_step
                 non_improving_steps_counter = 0
 
-            if (
-                f_after_step > f_ref or iter_count == 0
-            ):  # Result is worse than the reference
+            if (f_after_step > f_ref
+                or iter_count == 0): # Result is worse than the reference or first iteration
                 print(f"Iteration: {iter_count}, Line search triggered")
+
                 # Perform exact line search in direction d = alpha_new - alpha
                 d = alpha_after - self.alpha
                 theta = self._exact_line_search(self.alpha, d, G, y)
@@ -211,12 +213,12 @@ class SVM:
                 )
                 f_after_step = self._dual_objective(
                     G, y, alpha_after
-                )  # Recompute after update
+                ) # Recompute after update
 
             # Compute difference for convergence check
             diff = np.linalg.norm(alpha_after - self.alpha)
 
-            # Update step length using enhanced BB method
+            # Update step length using the advanced BB method
             tau = self._step_length_selection(G, y, self.alpha, alpha_after)
 
             # Update alpha and iteration counter
@@ -256,9 +258,7 @@ class SVM:
 
         return self.w, self.b
 
-    def _exact_line_search(
-        self, alpha: np.ndarray, d: float, G: np.ndarray, y: np.ndarray
-    ) -> float:
+    def _exact_line_search(self, alpha: np.ndarray, d: float, G: np.ndarray, y: np.ndarray) -> float:
         """
         Perform exact line search in direction d by minimizing f(alpha + theta * d_k), wrt theta.
 
@@ -271,13 +271,12 @@ class SVM:
         Returns:
             Minimized theta (res.x).
         """
+
         yd = y * d
         ya = y * alpha
 
         def f_theta(theta: float) -> float:
-            return 0.5 * (ya + theta * yd) @ G @ (ya + theta * yd) - np.sum(
-                alpha + theta * d
-            )
+            return 0.5 * (ya + theta * yd) @ G @ (ya + theta * yd) - np.sum(alpha + theta * d)
 
         res = minimize_scalar(f_theta, bounds=(0, 1), method="bounded")  # minimizing
         return res.x
@@ -289,11 +288,12 @@ class SVM:
         Args:
             G: Gram matrix (M x M)
             y: Labels (-1 or +1)
-            alpha: Lagrange parameter
+            alpha: Lagrange parameters
 
         Returns:
             Dual objective value.
         """
+
         return _dual_objective(G, y, alpha)
 
     def _step_length_selection(
@@ -304,17 +304,18 @@ class SVM:
         alpha_new: np.ndarray,
     ) -> float:
         """
-        Advanced Barzilai-Borwein step size using current and previous s, z values.
+        Barzilai-Borwein step size using current and previous s, z values.
 
         Args:
             G: Gram matrix (M x M)
             y: Labels (-1 or +1)
-            alpha_old: old Lagrange parameter
-            alpha_new: new Lagrange parameter
+            alpha_old: old Lagrange parameters
+            alpha_new: new Lagrange parameters
 
         Returns:
             Step size.
         """
+
         if self._s_prev is not None and self._z_prev is not None:
             new_s, new_z, tau = _step_length_selection(
                 self._s_prev,
@@ -330,16 +331,18 @@ class SVM:
             self._z_prev = new_z
             return tau
 
+        # Compute s and z
         s = alpha_new - alpha_old
         z = y * (G @ (y * s))  # Gradient difference approximation
 
-        # Store current s and z for next iteration
         num = np.inner(s, s)
         denom = np.inner(s, z)
 
+        # Store current s and z for next iteration
         self._s_prev = s
         self._z_prev = z
 
+        # Compute step size
         tau = num / (denom + 1e-10)
         tau = np.clip(tau, self.tau_min, self.tau_max)
 
@@ -353,23 +356,22 @@ class SVM:
             X: Feature matrix (M x d).
 
         Returns:
-            Gram matrix
+            Gram matrix.
         """
+
         G = self._kernel_function(
             X[:, None, ...], X[None, :, ...]
         )  # G: (M x M), X: (M x d)
         return G
 
-    def _alpha_lambda(
-        self, beta: np.ndarray, y: np.ndarray, lambd: float, C: float
-    ) -> np.ndarray:
+    def _alpha_lambda(self, beta: np.ndarray, y: np.ndarray, lambd: float, C: float) -> np.ndarray:
         """
         Compute alpha(lambda) based on the given formula (alpha(lambda) = min(max(beta + lambda * y, 0), C)).
 
         Args:
             beta: Lagrange parameter
             y: Labels (-1 or +1)
-            lambd: Lagrange parameter
+            lambda: Lagrange parameter
             C: Upper contstraint for the optimization problem, positive real
 
         Returns:
@@ -402,8 +404,8 @@ class SVM:
             r_min: minimal value of single nonlinear equation
             r_max: maximal value of single nonlinear equation
         """
-        alpha_projected = self._alpha_lambda(alpha, y, 0, C)
 
+        alpha_projected = self._alpha_lambda(alpha, y, 0, C)
         r = np.inner(y, alpha_projected)
 
         # Bracketing phase
@@ -424,12 +426,14 @@ class SVM:
 
             lambda_max = lambda_val
             r_max = r
+
         else:
             lambda_max = lambda_val
             r_max = r
             lambda_val -= delta
             alpha_lambda = self._alpha_lambda(alpha, y, lambda_val, C)
             r = np.inner(y, alpha_lambda)
+
             while r > 0:
                 lambda_max = lambda_val
                 r_max = r
@@ -441,6 +445,7 @@ class SVM:
 
             lambda_min = lambda_val
             r_min = r
+
         return lambda_val, lambda_min, lambda_max, r_min, r_max
 
     def _secant_phase(
@@ -472,10 +477,12 @@ class SVM:
         Returns:
             Lagrange parameter lambda.
         """
+
         s = 1 - r_min / (r_max + 1e-8)
         delta = delta / s
         lambda_val = lambda_max - delta
         r = np.inner(y, self._alpha_lambda(alpha, y, lambda_val, C))
+
         while abs(r) > self.tol:
             if r > 0:
                 if s <= 2:
@@ -494,6 +501,7 @@ class SVM:
                     r_max = r
                     lambda_val = lambda_new
                     s = (lambda_max - lambda_min) / (lambda_max - lambda_val)
+
             else:
                 if s >= 2:
                     lambda_min = lambda_val
@@ -531,6 +539,7 @@ class SVM:
         Returns:
             Solution of the minimization of the partial Lagrangian.
         """
+
         # Bracketing phase
         lambda_val, lambda_min, lambda_max, r_min, r_max = self._bracketing_phase(
             alpha, y, C, delta
@@ -553,7 +562,6 @@ class SVM:
         Returns:
             Values of +/- 1.
         """
-
         return np.sign(self._decision_function(X))
 
     def _decision_function(self, X: np.ndarray) -> np.ndarray:
@@ -566,6 +574,7 @@ class SVM:
         Returns:
             Decision values, f(X) (M_test x 1)
         """
+
         if self.mode == "primal_SGD" or self.mode == "primal_QP":
             return np.dot(X, self.w) + self.b
 
@@ -616,9 +625,7 @@ class SVM:
             raise ValueError("Unsupported kernel function.")
 
 
-from numba import njit
-
-
+# Compile some functions with Numba for better performance
 @njit
 def _dual_objective(G: np.ndarray, y: np.ndarray, alpha: np.ndarray) -> float:
     """
@@ -637,12 +644,14 @@ def _step_length_selection(
     alpha_new: np.ndarray,
     tau_min: float,
     tau_max: float,
-):
+) -> Tuple[np.ndarray, np.ndarray, float]:
     """
-    Advanced Barzilai-Borwein step size using current and previous s, z values.
+    Barzilai-Borwein step size using current and previous s, z values.
     """
+
+    # Compute s and z
     s = alpha_new - alpha_old
-    z = y * (G @ (y * s))  # Gradient difference approximation
+    z = y * (G @ (y * s)) # Gradient difference approximation
 
     # Store current s and z for next iteration
     num = np.dot(s, s) + np.dot(s_prev, s_prev)
@@ -687,9 +696,6 @@ def main(
     Returns:
         None: Plot of the dataset and descision boundary.
     """
-    import random
-    from test_data import TestLinear, TestNonLinear
-    import matplotlib.pyplot as plt
 
     if datagenerator == TestLinear:
         listA, listB = datagenerator(w, b, n_A, n_B, margin, seed=seed)
@@ -714,7 +720,13 @@ def main(
     svm = SVM(
         C=1.0, kernel=kernel, lr=lr, mode=mode, sigma=sigma, s=s, max_iter=max_iter
     )
+
+    # Timing the fit
+    start_time = time.time()
     svm.fit(X, y)
+    end_time = time.time()
+
+    print(f"Training time: {end_time - start_time:.4f} seconds")
 
     # Predict decision boundary
     xx, yy = np.meshgrid(np.linspace(-11, 11, 50), np.linspace(-11, 11, 50))
