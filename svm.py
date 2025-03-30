@@ -1,34 +1,47 @@
 import numpy as np
 from scipy.optimize import minimize_scalar
 from pprint import pprint
+from typing import Tuple
+
 
 class SVM:
-    def __init__(self, C=1.0, kernel="linear", lr=0.01, tol=1e-6, max_iter=1000, mode="primal_SGD", sigma=1.0, s=1.0):
+    def __init__(
+        self,
+        C: float = 1.0,
+        kernel: str = "linear",
+        lr: float = 0.01,
+        tol: float = 1e-6,
+        max_iter: int = 1000,
+        mode: str = "primal_SGD",
+        sigma: float = 1.0,
+        s: float = 1.0,
+    ):
         """
         Initialize the SVM model.
         """
 
-        self.C = C # Regularization parameter
+        self.C = C  # Regularization parameter
         self.kernel = kernel
-        self.lr = lr # Learning rate
-        self.tol = tol # Tolerance for stopping criterion
-        self.max_iter = max_iter # Max iterations
+        self.lr = lr  # Learning rate
+        self.tol = tol  # Tolerance for stopping criterion
+        self.max_iter = max_iter  # Max iterations
         self.mode = mode
-        self.w = None # Weight vector
-        self.b = 0 # Bias term
-        self.alpha = None # Lagrange multipliers (for dual)
-        self.support_vectors = None # Support vectors (for dual)
-        self.support_y = None # Support vector labels (for dual)
-        self.support_alphas = None # Support vector Lagrange multipliers (for dual)
-        self.sigma = sigma # Kernel bandwidth
-        self.s = s # Kernel parameter
+        self.w = None  # Weight vector
+        self.b = 0  # Bias term
+        self.alpha = None  # Lagrange multipliers (for dual)
+        self.support_vectors = None  # Support vectors (for dual)
+        self.support_y = None  # Support vector labels (for dual)
+        self.support_alphas = None  # Support vector Lagrange multipliers (for dual)
+        self.sigma = sigma  # Kernel bandwidth
+        self.s = s  # Kernel parameter
 
+        # Parameters for the Barzilai-Borwein method
         self.tau_min = 1e-5
         self.tau_max = 1e5
         self._s_prev = None
         self._z_prev = None
 
-    def fit(self, X, y, tau=0.001):
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         """
         Train the SVM model.
 
@@ -46,7 +59,7 @@ class SVM:
         else:
             raise ValueError("Mode must be 'primal_SGD', 'primal_QP' or 'dual'.")
 
-    def _fit_primal_SGD(self, X, y):
+    def _fit_primal_SGD(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
         """Train the SVM using Stochastic Gradient Descent (SGD) for the primal formulation."""
 
         M, d = X.shape  # Number of samples, number of features
@@ -67,9 +80,10 @@ class SVM:
 
         return self.w, self.b
 
-    def _fit_primal_QP(self, X, y):
+    def _fit_primal_QP(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
         """
-        Train the SVM using the Quadratic Penalty (QP) method for the primal formulation."""
+        Train the SVM using the Quadratic Penalty (QP) method for the primal formulation.
+        """
 
         M, d = X.shape
         w = np.zeros(d)
@@ -84,7 +98,9 @@ class SVM:
 
             # Compute gradients
             indicator = margin < 1
-            grad_w = w - self.C * np.sum((2 * (1 - margin) * y * X.T * indicator), axis=1)
+            grad_w = w - self.C * np.sum(
+                (2 * (1 - margin) * y * X.T * indicator), axis=1
+            )
             grad_b = -self.C * np.sum(2 * (1 - margin) * y * indicator)
 
             # Update weights and bias using gradient descent
@@ -105,7 +121,7 @@ class SVM:
 
         return self.w, self.b
 
-    def _fit_dual(self, X, y):
+    def _fit_dual(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
         """
         Train the SVM using Projected Gradient Descent (PGD) with adaptive step length (Barzilai-Borwein) for the dual formulation.
         """
@@ -125,9 +141,9 @@ class SVM:
         f_best = f_prev
 
         f_c = f_best
-        f_ref = float("inf") # Start as infinity
-        L = 10 # Number of allowed iterations without improvement
-        non_improving_steps_counter = 0 # Counter for non-improving steps
+        f_ref = float("inf")  # Start as infinity
+        L = 10  # Number of allowed iterations without improvement
+        non_improving_steps_counter = 0  # Counter for non-improving steps
 
         while diff > self.tol and iter_count < self.max_iter:
             # Compute gradient of the dual objective
@@ -154,15 +170,19 @@ class SVM:
                 f_c = f_before_step
                 non_improving_steps_counter = 0
 
-            print(f'{f_before_step=} {f_after_step=} {f_ref=}')
-
-            if f_after_step > f_ref or iter_count == 0:  # Result is worse than the reference
-                print('Line search triggered')
+            if (
+                f_after_step > f_ref or iter_count == 0
+            ):  # Result is worse than the reference
+                print(f"Iteration: {iter_count}, Line search triggered")
                 # Perform exact line search in direction d = alpha_new - alpha
                 d = alpha_after - self.alpha
                 theta = self._exact_line_search(self.alpha, d, G, y)
-                alpha_after = self._project_onto_feasible_set(self.alpha + theta * d, y, self.C)
-                f_after_step = self._dual_objective(G, y, alpha_after)  # Recompute after update
+                alpha_after = self._project_onto_feasible_set(
+                    self.alpha + theta * d, y, self.C
+                )
+                f_after_step = self._dual_objective(
+                    G, y, alpha_after
+                )  # Recompute after update
 
             # Compute difference for convergence check
             diff = np.linalg.norm(alpha_after - self.alpha)
@@ -175,9 +195,6 @@ class SVM:
             f_prev = f_after_step
             iter_count += 1
 
-            print(f"Iteration {iter_count}: τ = {tau:.4e}, Δα = {diff:.4e}")
-
-
         # Identify support vectors
         support_idx = (self.alpha > 1e-5) & (self.alpha < self.C)
         self.support_vectors = X[support_idx]
@@ -187,48 +204,71 @@ class SVM:
         if self.kernel == "linear":
             # Compute the weight vector
             self.w = np.sum(
-                (self.support_alphas[:, None] * self.support_y[:, None]) * self.support_vectors,
+                (self.support_alphas[:, None] * self.support_y[:, None])
+                * self.support_vectors,
                 axis=0,
             )
 
             # Bias term
             self.b = np.mean(self.support_y - np.dot(self.support_vectors, self.w))
 
-        else: # Non-linear kernel
+        else:  # Non-linear kernel
             self.w = None  # No fixed weight vector
 
             # Bias term
-            K_vals = self._kernel_function(self.support_vectors, self.support_vectors[0])
-            self.b = self.support_y[0] - np.sum(self.support_alphas * self.support_y * K_vals)
+            K_vals = self._kernel_function(
+                self.support_vectors, self.support_vectors[0]
+            )
+            self.b = self.support_y[0] - np.sum(
+                self.support_alphas * self.support_y * K_vals
+            )
 
         return self.w, self.b
-    
-    def _exact_line_search(self, alpha, d, G, y):
+
+    def _exact_line_search(
+        self, alpha: np.ndarray, d: float, G: np.ndarray, y: np.ndarray
+    ) -> float:
         """
         Perform exact line search in direction d.
         """
         yd = y * d
         ya = y * alpha
 
-        def f_theta(theta):
-            return 0.5 * (ya + theta * yd) @ G @ (ya + theta * yd) - np.sum(alpha + theta * d)
+        def f_theta(theta: float) -> float:
+            return 0.5 * (ya + theta * yd) @ G @ (ya + theta * yd) - np.sum(
+                alpha + theta * d
+            )
 
-        res = minimize_scalar(f_theta, bounds=(0, 1), method='bounded')
+        res = minimize_scalar(f_theta, bounds=(0, 1), method="bounded")
         return res.x
 
-    def _dual_objective(self, G, y, alpha):
+    def _dual_objective(self, G: np.ndarray, y: np.ndarray, alpha: np.ndarray) -> float:
         """
         Compute dual objective value.
         """
         return _dual_objective(G, y, alpha)
 
-
-    def _step_length_selection(self, G, y, alpha_old, alpha_new):
+    def _step_length_selection(
+        self,
+        G: np.ndarray,
+        y: np.ndarray,
+        alpha_old: np.ndarray,
+        alpha_new: np.ndarray,
+    ) -> float:
         """
-        Enhanced Barzilai-Borwein step size using current and previous s, z values.
+        Advanced Barzilai-Borwein step size using current and previous s, z values.
         """
         if self._s_prev is not None and self._z_prev is not None:
-            new_s, new_z, tau = _step_length_selection(self._s_prev, self._z_prev, G, y, alpha_old, alpha_new, self.tau_min, self.tau_max)
+            new_s, new_z, tau = _step_length_selection(
+                self._s_prev,
+                self._z_prev,
+                G,
+                y,
+                alpha_old,
+                alpha_new,
+                self.tau_min,
+                self.tau_max,
+            )
             self._s_prev = new_s
             self._z_prev = new_z
             return tau
@@ -259,15 +299,24 @@ class SVM:
         # G: (M x M)
         return G
 
-    def _alpha_lambda(self, beta, y, lambd, C):
+    def _alpha_lambda(
+        self, beta: np.ndarray, y: np.ndarray, lambd: float, C: float
+    ) -> np.ndarray:
         """
         Compute alpha(lambda) based on the given formula.
         """
         return np.minimum(np.maximum(beta + lambd * y, 0), C)
 
     def _bracketing_phase(
-        self, alpha, y, C, delta=0.01, lambda_val=0, lambda_min=None, lambda_max=None
-    ):
+        self,
+        alpha: np.ndarray,
+        y: np.ndarray,
+        C: float,
+        delta: float = 0.01,
+        lambda_val: float = 0,
+        lambda_min: float = None,
+        lambda_max: float = None,
+    ) -> Tuple[float, float, float, float, float]:
         """
         Perform the bracketing phase for bisection.
         """
@@ -313,12 +362,21 @@ class SVM:
         return lambda_val, lambda_min, lambda_max, r_min, r_max
 
     def _secant_phase(
-        self, alpha, y, C, delta, r_min, r_max, lambda_val, lambda_min, lambda_max
-    ):
+        self,
+        alpha: np.ndarray,
+        y: np.ndarray,
+        C: float,
+        delta: float,
+        r_min: float,
+        r_max: float,
+        lambda_val: float,
+        lambda_min: float,
+        lambda_max: float,
+    ) -> float:
         """
         Perform the secant phase for bisection.
         """
-        s = 1 - r_min / r_max
+        s = 1 - r_min / (r_max + 1e-8)
         delta = delta / s
         lambda_val = lambda_max - delta
         r = np.inner(y, self._alpha_lambda(alpha, y, lambda_val, C))
@@ -344,7 +402,7 @@ class SVM:
                 if s >= 2:
                     lambda_min = lambda_val
                     r_min = r
-                    s = 1 - r_min / r_max
+                    s = 1 - r_min / (r_max + 1e-8)
                     delta = (lambda_max - lambda_min) / (s + 1e-10)
                     lambda_val = lambda_max - delta
                 else:
@@ -362,7 +420,9 @@ class SVM:
 
         return lambda_val
 
-    def _project_onto_feasible_set(self, alpha, y, C, delta=0.01):
+    def _project_onto_feasible_set(
+        self, alpha: np.ndarray, y: np.ndarray, C: float, delta: float = 0.01
+    ):
         """
         Project the alpha vector onto the feasible set using bisection.
         """
@@ -378,14 +438,14 @@ class SVM:
 
         return self._alpha_lambda(alpha, y, lambda_val, C)
 
-    def predict(self, X):
+    def predict(self, X: np.ndarray) -> np.ndarray:
         """
         Predict class labels using the trained SVM.
         """
 
         return np.sign(self._decision_function(X))
 
-    def _decision_function(self, X):
+    def _decision_function(self, X: np.ndarray) -> np.ndarray:
         """
         Compute decision function values for given data points in both Primal and Dual SVM.
 
@@ -402,42 +462,47 @@ class SVM:
             sv = self.support_vectors[None, :, :]
             Xs = X[:, None, :]
 
-            decision_values = np.sum(
-                self.support_alphas * self.support_y * self._kernel_function(sv, Xs),
-                axis=-1
-            ) + self.b
+            decision_values = (
+                np.sum(
+                    self.support_alphas
+                    * self.support_y
+                    * self._kernel_function(sv, Xs),
+                    axis=-1,
+                )
+                + self.b
+            )
 
             return decision_values
 
         else:
             raise ValueError("Mode must be 'primal_SGD', 'primal_QP' or 'dual'.")
 
-    def _kernel_function(self, x1, x2):
+    def _kernel_function(self, x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
         """
         Compute the kernel function.
         """
 
         if self.kernel == "linear":
-            # print(x1.shape, x2.shape)
-            # return np.tensordot(x1, x2, axes=(, -1))
             return np.einsum("...i,...i->...", x1, x2)
-        
+
         elif self.kernel == "gaussian":
-            return np.exp(-np.linalg.norm(x1 - x2, axis=-1) ** 2 / (2 * self.sigma ** 2))
+            return np.exp(-np.linalg.norm(x1 - x2, axis=-1) ** 2 / (2 * self.sigma**2))
 
         elif self.kernel == "laplacian":
             return np.exp(-np.linalg.norm(x1 - x2, axis=-1) / self.sigma)
-        
+
         elif self.kernel == "inverse multiquadratic":
-            return 1 / (self.sigma ** 2 + np.linalg.norm(x1 - x2, axis=-1) ** 2) ** self.s
+            return 1 / (self.sigma**2 + np.linalg.norm(x1 - x2, axis=-1) ** 2) ** self.s
 
         else:
             raise ValueError("Unsupported kernel function.")
 
 
 from numba import njit
+
+
 @njit
-def _dual_objective(G, y, alpha):
+def _dual_objective(G: np.ndarray, y: np.ndarray, alpha: np.ndarray) -> float:
     """
     Compute dual objective value.
     """
@@ -445,7 +510,16 @@ def _dual_objective(G, y, alpha):
 
 
 @njit
-def _step_length_selection(s_prev, z_prev, G, y, alpha_old, alpha_new, tau_min, tau_max):
+def _step_length_selection(
+    s_prev: np.ndarray,
+    z_prev: np.ndarray,
+    G: np.ndarray,
+    y: np.ndarray,
+    alpha_old: np.ndarray,
+    alpha_new: np.ndarray,
+    tau_min: float,
+    tau_max: float,
+):
     """
     Enhanced Barzilai-Borwein step size using current and previous s, z values.
     """
@@ -461,9 +535,11 @@ def _step_length_selection(s_prev, z_prev, G, y, alpha_old, alpha_new, tau_min, 
 
     return s, z, tau
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import random
     from test_data import TestLinear
+
     w = np.array([1.0, 1.0])
     b = 1.0
     n_A = 3000
@@ -481,7 +557,9 @@ if __name__ == '__main__':
     y = np.hstack((np.ones(n_A), -np.ones(n_B)))  # Class A = +1, Class B = -1
 
     # Train the SVM
-    svm = SVM(C=1.0, kernel="linear", lr=0.01, mode="dual", sigma=1.5, s=1.0, max_iter=150)
+    svm = SVM(
+        C=1.0, kernel="linear", lr=0.01, mode="dual", sigma=1.5, s=1.0, max_iter=150
+    )
     svm.fit(X, y)
 
     # Predict decision boundary
