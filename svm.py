@@ -46,8 +46,11 @@ class SVM:
         Dispatcher function for training the SVM model.
 
         Args:
-            X (numpy array): Feature matrix (M x d).
-            y (numpy array): Labels (-1 or +1).
+            X: Feature matrix (M x d).
+            y: Labels (-1 or +1).
+
+        Returns:
+            None
         """
 
         if self.mode == "primal_SGD":
@@ -63,8 +66,12 @@ class SVM:
         """
         Train the SVM using Stochastic Gradient Descent (SGD) for the primal formulation.
 
+        Args:
+            X: Feature matrix (M x d).
+            y: Labels (-1 or +1).
+
         Returns:
-            ndarray: Weight and bias term vectors.
+            w, b: Weight and bias term vectors.
         """
 
         M, d = X.shape  # Number of samples, number of features
@@ -89,8 +96,12 @@ class SVM:
         """
         Train the SVM using the Quadratic Penalty (QP) method for the primal formulation.
 
+        Args:
+            X: Feature matrix (M x d).
+            y: Labels (-1 or +1).
+
         Returns:
-            ndarray: Weight and bias term vectors.
+            w, b: Weight and bias term vectors.
         """
 
         _, d = X.shape
@@ -102,7 +113,6 @@ class SVM:
         for k in range(self.max_iter):
             # Compute the penalized objective function Q(w, b, mu_k)
             margin = y * (np.dot(X, w) + b)
-            hinge_loss = np.maximum(0, 1 - margin) ** 2  # Quadratic penalty term
 
             # Compute gradients
             indicator = margin < 1
@@ -134,8 +144,12 @@ class SVM:
         Train the SVM using Projected Gradient Descent (PGD),
         with adaptive step length (advanced Barzilai-Borwein combined with exact line search) for the dual formulation.
 
+        Args:
+            X: Feature matrix (M x d).
+            y: Labels (-1 or +1).
+
         Returns:
-            ndarray: Weight and bias term vectors (if kernel != linear, only bias term has a value).
+            w, b: Weight and bias term vectors (if kernel != linear, only bias term has a value).
         """
         M = X.shape[0]
         G = self._compute_gram_matrix(X)  # Compute the Gram matrix
@@ -243,8 +257,14 @@ class SVM:
         """
         Perform exact line search in direction d by minimizing f(alpha + theta * d_k), wrt theta.
 
+        Args:
+            alpha: Lagrange parameter
+            d: line search direction
+            G: Gram matrix (M x M)
+            y: Labels (-1 or +1).
+
         Returns:
-            float: Minimized theta (res.x).
+            Minimized theta (res.x).
         """
         yd = y * d
         ya = y * alpha
@@ -261,8 +281,13 @@ class SVM:
         """
         Compute dual objective value (f(alpha) = 0.5 * inner product(alpha, yGy * alpha) - inner product(1_M, alpha)).
 
+        Args:
+            G: Gram matrix (M x M)
+            y: Labels (-1 or +1)
+            alpha: Lagrange parameter
+
         Returns:
-            float: Dual objective value.
+            Dual objective value.
         """
         return _dual_objective(G, y, alpha)
 
@@ -276,8 +301,14 @@ class SVM:
         """
         Advanced Barzilai-Borwein step size using current and previous s, z values.
 
+        Args:
+            G: Gram matrix (M x M)
+            y: Labels (-1 or +1)
+            alpha_old: old Lagrange parameter
+            alpha_new: new Lagrange parameter
+
         Returns:
-            float: step size.
+            Step size.
         """
         if self._s_prev is not None and self._z_prev is not None:
             new_s, new_z, tau = _step_length_selection(
@@ -313,8 +344,11 @@ class SVM:
         """
         Compute the Gram matrix for the given data points based on the kernel.
 
+        Args:
+            X: Feature matrix (M x d).
+
         Returns:
-            ndarray: Gram matrix
+            Gram matrix
         """
         G = self._kernel_function(
             X[:, None, ...], X[None, :, ...]
@@ -327,8 +361,14 @@ class SVM:
         """
         Compute alpha(lambda) based on the given formula (alpha(lambda) = min(max(beta + lambda * y, 0), C)).
 
+        Args:
+            beta: Lagrange parameter
+            y: Labels (-1 or +1)
+            lambd: Lagrange parameter
+            C: Upper contstraint for the optimization problem, positive real
+
         Returns:
-            ndarray: Solution of the minimization of the partial Lagrangian.
+            Solution of the minimization of the partial Lagrangian.
         """
         return np.minimum(np.maximum(beta + lambd * y, 0), C)
 
@@ -339,18 +379,23 @@ class SVM:
         C: float,
         delta: float = 0.01,
         lambda_val: float = 0,
-        lambda_min: float = None,
-        lambda_max: float = None,
     ) -> Tuple[float, float, float, float, float]:
         """
         Perform the bracketing phase for bisection.
 
+        Args:
+            alpha: Lagrange parameter
+            y: Labels (-1 or +1)
+            C: Upper contstraint for the optimization problem, positive real
+            delta: initial estimate
+            lambda_val: initial value
+
         Returns: values to be used in the secant phase
-            float: lambda_val
-            float: lambda_min
-            float: lambda_max
-            float: r_min
-            float: r_max
+            lambda_val: end value located in a bracket
+            lambda_min: end value located in a bracket
+            lambda_max: end value located in a bracket
+            r_min: minimal value of single nonlinear equation
+            r_max: maximal value of single nonlinear equation
         """
         alpha_projected = self._alpha_lambda(alpha, y, 0, C)
 
@@ -408,8 +453,19 @@ class SVM:
         """
         Perform the secant phase for bisection.
 
+        Args:
+            alpha: Lagrange parameter
+            y: Labels (-1 or +1)
+            C: Upper contstraint for the optimization problem, positive real
+            delta: initial estimate
+            lambda_val: end value located in a bracket
+            lambda_min: end value located in a bracket
+            lambda_max: end value located in a bracket
+            r_min: minimal value of single nonlinear equation (located in a bracket)
+            r_max: maximal value of single nonlinear equation (located in a bracket)
+
         Returns:
-            float: the lagrange parameter lambda.
+            Lagrange parameter lambda.
         """
         s = 1 - r_min / (r_max + 1e-8)
         delta = delta / s
@@ -461,8 +517,14 @@ class SVM:
         """
         Project the alpha vector onto the feasible set using bisection method.
 
+        Args:
+            alpha: Lagrange parameter
+            y: Labels (-1 or +1)
+            C: Upper contstraint for the optimization problem, positive real
+            delta: initial estimate
+
         Returns:
-            ndarray: Solution of the minimization of the partial Lagrangian.
+            Solution of the minimization of the partial Lagrangian.
         """
         # Bracketing phase
         lambda_val, lambda_min, lambda_max, r_min, r_max = self._bracketing_phase(
@@ -480,8 +542,11 @@ class SVM:
         """
         Predict class labels using the trained SVM.
 
+        Args:
+            X: Feature matrix (M x d).
+
         Returns:
-            ndarray: values of +/- 1.
+            Values of +/- 1.
         """
 
         return np.sign(self._decision_function(X))
@@ -491,10 +556,10 @@ class SVM:
         Compute decision function values for given data points in both Primal and Dual SVM.
 
         Args:
-        ndarray: Test feature matrix, X (M_test x d)
+            X: Feature matrix (M x d).
 
         Returns:
-        ndarray: Decision values, f(X) (M_test x 1)
+            Decision values, f(X) (M_test x 1)
         """
         if self.mode == "primal_SGD" or self.mode == "primal_QP":
             return np.dot(X, self.w) + self.b
@@ -522,8 +587,12 @@ class SVM:
         """
         Compute the kernel function between vectors x1 and x2.
 
+        Args:
+            x1: support vector
+            x2: arbitrary element of the support vector, taking the first element for simplicity
+
         Returns:
-        ndarray: computed kernel values.
+        Computed kernel values.
         """
 
         if self.kernel == "linear":
@@ -580,15 +649,27 @@ def _step_length_selection(
     return s, z, tau
 
 
-if __name__ == "__main__":
+def main(
+    w: np.ndarray, b: float, n_A: int, n_B: int, margin: float, kernel: str, mode: str
+) -> None:
+    """
+    Training the SVM and predicting the decision boundary.
+
+    Args:
+        w: non-zero normal vector defining a hyperplane
+        b: real number, offset of the hyperplane
+        n_A: number of additional samples from class A
+        n_B: number of additional samples from class B
+        margin: desired margin for the samples
+        kernel: function K: R^d x R^d -> R s.t. w(x) = inner product(w, K(x,))
+        mode: primal (_SGD/_QP) or dual.
+
+    Returns:
+        None: Plot of the dataset and descision boundary.
+    """
     import random
     from test_data import TestLinear
-
-    w = np.array([1.0, 1.0])
-    b = 1.0
-    n_A = 3000
-    n_B = 2000
-    margin = 0.5
+    import matplotlib.pyplot as plt
 
     random_seed = random.randint(0, 1000)
 
@@ -601,9 +682,7 @@ if __name__ == "__main__":
     y = np.hstack((np.ones(n_A), -np.ones(n_B)))  # Class A = +1, Class B = -1
 
     # Train the SVM
-    svm = SVM(
-        C=1.0, kernel="linear", lr=0.01, mode="dual", sigma=1.5, s=1.0, max_iter=150
-    )
+    svm = SVM(C=1.0, kernel=kernel, lr=0.01, mode=mode, sigma=1.5, s=1.0, max_iter=150)
     svm.fit(X, y)
 
     # Predict decision boundary
@@ -611,3 +690,40 @@ if __name__ == "__main__":
     Z = np.c_[xx.ravel(), yy.ravel()]
     preds = svm.predict(Z).reshape(xx.shape)
     print("Finished predict")
+    decision_values = svm._decision_function(Z).reshape(xx.shape)
+
+    # Plot the results
+    plt.figure(figsize=(9, 7))
+    plt.contourf(
+        xx,
+        yy,
+        decision_values,
+        alpha=0.5,
+        levels=[-100, 0, 100],
+        colors=["#AFCBFF", "#F19C8A"],
+    )
+    plt.scatter(
+        X_A[:, 0],
+        X_A[:, 1],
+        color="#FF5733",
+        label="Class A",
+        edgecolors="black",
+        linewidth=0.5,
+        alpha=0.85,
+    )
+    plt.scatter(
+        X_B[:, 0],
+        X_B[:, 1],
+        color="#1F77B4",
+        label="Class B",
+        edgecolors="black",
+        linewidth=0.5,
+        alpha=0.85,
+    )
+    plt.legend(frameon=True, fontsize=12, loc="upper right")
+    plt.title("SVM Decision Boundary on Generated Data")
+    plt.show()
+
+
+if __name__ == "__main__":
+    main(np.array([1.0, 1.0]), 1.0, 2000, 2000, 0.5, "linear", "dual")
