@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 from numpy.random import default_rng
 
 
-def TestLinear(w,b,n_A,n_B,margin,**kwargs):
-    '''
-    
+def TestLinear(w, b, n_A, n_B, margin, **kwargs):
+    """
+
 
     Parameters
     ----------
@@ -19,7 +19,7 @@ def TestLinear(w,b,n_A,n_B,margin,**kwargs):
         number of additional samples from class B
     margin : positive real
         desired margin for the samples
-        
+
     Optional Parameters
     -------------------
     seed : integer
@@ -45,67 +45,69 @@ def TestLinear(w,b,n_A,n_B,margin,**kwargs):
         list_B contains n_B vectors, produced in a similar way, lying on the
         opposite side of the hyperplane.
 
-    '''
-    
+    """
+
     # read out additional keyword arguments
-    seed = kwargs.get("seed",18)
-    shape = kwargs.get("shape",1.)
-    scale = kwargs.get("scale",1.)
-    sigma = kwargs.get("sigma",1.)
-    
+    seed = kwargs.get("seed", 18)
+    shape = kwargs.get("shape", 1.0)
+    scale = kwargs.get("scale", 1.0)
+    sigma = kwargs.get("sigma", 1.0)
+
     # read out the number of dimensions
     d = w.size
-    
+
     # rescale w to length 1
     norm_w = np.linalg.norm(w)
-    w = w/norm_w
-    b = b/norm_w
+    w = w / norm_w
+    b = b / norm_w
 
     # initialise a random number generator
     rng = default_rng(seed)
-    
+
     # initialise an empty list
-    list_A = []    
+    list_A = []
     # draw samples for class A
     for _ in range(n_A):
         # draw n_A samples of a d-dimensional normal distribution
-        vec = rng.normal(size=d,scale=sigma)
+        vec = rng.normal(size=d, scale=sigma)
         # draw n_A samples of a Gamma distribution
-        dist = rng.gamma(shape,scale)
+        dist = rng.gamma(shape, scale)
         # project vec onto w^\perp
-        vec += -np.inner(vec,w)*w
+        vec += -np.inner(vec, w) * w
         # add (dist+margin+b)*w to vec
-        vec += (dist+margin-b)*w
+        vec += (dist + margin - b) * w
         # append the vector vec to list_A
         list_A.append(vec)
-        
+
     # initialise an empty list
-    list_B = []    
+    list_B = []
     # draw samples for class A
     for _ in range(n_B):
         # draw n_B samples of a d-dimensional normal distribution
-        vec = rng.normal(size=d,scale=sigma)
+        vec = rng.normal(size=d, scale=sigma)
         # draw n_A samples of a Gamma distribution
-        dist = rng.gamma(shape,scale)
+        dist = rng.gamma(shape, scale)
         # project vec onto w^\perp
-        vec += -np.inner(vec,w)*w
+        vec += -np.inner(vec, w) * w
         # add -(dist+margin-b)*w to vec
-        vec += (-b-dist-margin)*w
+        vec += (-b - dist - margin) * w
         # append the vector vec to list_B
         list_B.append(vec)
-    
+
     # choose a random vector of each list and force it to be a support vector
-    vec = rng.normal(size=d,scale=sigma)
-    vec += -np.inner(vec,w)*w
-    supp_A = rng.integers(0,n_A)
-    list_A[supp_A] = vec+(margin-b)*w
-    supp_B = rng.integers(0,n_B)
-    list_B[supp_B] = vec+(-b-margin)*w
+    vec = rng.normal(size=d, scale=sigma)
+    vec += -np.inner(vec, w) * w
+    supp_A = rng.integers(0, n_A)
+    list_A[supp_A] = vec + (margin - b) * w
+    supp_B = rng.integers(0, n_B)
+    list_B[supp_B] = vec + (-b - margin) * w
 
-    return(list_A,list_B)
+    return (list_A, list_B)
 
 
-def TestNonLinear(n_A, n_B, margin=5.0, n_clusters=3, cluster_spread=0.8, plot_extent=8.0, **kwargs):
+def TestNonLinear(
+    n_A, n_B, margin, seed, n_clusters=3, cluster_spread=0.8, plot_extent=8.0
+):
     """
     Generate two classes as multiple Gaussian clusters (non-linear separability).
 
@@ -133,15 +135,14 @@ def TestNonLinear(n_A, n_B, margin=5.0, n_clusters=3, cluster_spread=0.8, plot_e
     X_B : (n_B, 2) np.ndarray
         Samples from class B.
     """
-    seed = kwargs.get("seed", 42)
     rng = default_rng(seed)
 
     samples_A = np.full(n_clusters, n_A // n_clusters)
     samples_B = np.full(n_clusters, n_B // n_clusters)
 
     # Handle any leftover points
-    samples_A[:n_A % n_clusters] += 1
-    samples_B[:n_B % n_clusters] += 1
+    samples_A[: n_A % n_clusters] += 1
+    samples_B[: n_B % n_clusters] += 1
 
     X_A = np.empty((0, 2))
     X_B = np.empty((0, 2))
@@ -166,12 +167,12 @@ def TestNonLinear(n_A, n_B, margin=5.0, n_clusters=3, cluster_spread=0.8, plot_e
 
 
 if __name__ == "__main__":
-    w = np.array([1.,1.])
-    b = 1.
+    w = np.array([1.0, 1.0])
+    b = 1.0
     n_A = 10
     n_B = 8
-    margin = 5.e-1
-    listA,listB = test_linear(w,b,n_A,n_B,margin)
-    [plt.scatter(x[0],x[1],color="r") for x in listA]
-    [plt.scatter(x[0],x[1],color="b") for x in listB]
+    margin = 5.0e-1
+    listA, listB = TestLinear(w, b, n_A, n_B, margin)
+    [plt.scatter(x[0], x[1], color="r") for x in listA]
+    [plt.scatter(x[0], x[1], color="b") for x in listB]
     plt.show()
