@@ -2,6 +2,9 @@ import numpy as np
 from scipy.optimize import minimize_scalar
 from pprint import pprint
 from typing import Tuple
+import random
+from test_data import TestLinear, TestNonLinear
+import matplotlib.pyplot as plt
 
 
 class SVM:
@@ -10,7 +13,7 @@ class SVM:
         C: float = 1.0,
         kernel: str = "linear",
         lr: float = 0.01,
-        tol: float = 1e-6,
+        tol: float = 1e-4,
         max_iter: int = 1000,
         mode: str = "primal_SGD",
         sigma: float = 1.0,
@@ -220,6 +223,8 @@ class SVM:
             self.alpha = alpha_after
             f_prev = f_after_step
             iter_count += 1
+
+        print(f"Converged after {iter_count} iterations.")
 
         # Identify support vectors
         support_idx = (self.alpha > 1e-5) & (self.alpha < self.C)
@@ -650,7 +655,22 @@ def _step_length_selection(
 
 
 def main(
-    w: np.ndarray, b: float, n_A: int, n_B: int, margin: float, kernel: str, mode: str
+    w: np.ndarray,
+    b: float,
+    n_A: int,
+    n_B: int,
+    margin: float,
+    kernel: str,
+    mode: str,
+    datagenerator: callable,
+    seed: int,
+    lr: float = 0.01,
+    sigma: float = 1.5,
+    s: float = 1.5,
+    max_iter: int = 2500,
+    n_clusters: int = 2,
+    cluster_spread: float = 0.4,
+    plot_extent: float = 8.0,
 ) -> None:
     """
     Training the SVM and predicting the decision boundary.
@@ -668,12 +688,21 @@ def main(
         None: Plot of the dataset and descision boundary.
     """
     import random
-    from test_data import TestLinear
+    from test_data import TestLinear, TestNonLinear
     import matplotlib.pyplot as plt
 
-    random_seed = random.randint(0, 1000)
-
-    listA, listB = TestLinear(w, b, n_A, n_B, margin, seed=random_seed)
+    if datagenerator == TestLinear:
+        listA, listB = datagenerator(w, b, n_A, n_B, margin, seed=seed)
+    if datagenerator == TestNonLinear:
+        listA, listB = datagenerator(
+            n_A,
+            n_B,
+            margin,
+            seed,
+            n_clusters=n_clusters,
+            cluster_spread=cluster_spread,
+            plot_extent=plot_extent,
+        )
 
     # Convert lists to numpy arrays
     X_A = np.array(listA)
@@ -682,14 +711,14 @@ def main(
     y = np.hstack((np.ones(n_A), -np.ones(n_B)))  # Class A = +1, Class B = -1
 
     # Train the SVM
-    svm = SVM(C=1.0, kernel=kernel, lr=0.01, mode=mode, sigma=1.5, s=1.0, max_iter=150)
+    svm = SVM(
+        C=1.0, kernel=kernel, lr=lr, mode=mode, sigma=sigma, s=s, max_iter=max_iter
+    )
     svm.fit(X, y)
 
     # Predict decision boundary
-    xx, yy = np.meshgrid(np.linspace(-8, 8, 50), np.linspace(-8, 8, 50))
+    xx, yy = np.meshgrid(np.linspace(-11, 11, 50), np.linspace(-11, 11, 50))
     Z = np.c_[xx.ravel(), yy.ravel()]
-    preds = svm.predict(Z).reshape(xx.shape)
-    print("Finished predict")
     decision_values = svm._decision_function(Z).reshape(xx.shape)
 
     # Plot the results
@@ -726,4 +755,14 @@ def main(
 
 
 if __name__ == "__main__":
-    main(np.array([1.0, 1.0]), 1.0, 2000, 2000, 0.5, "linear", "dual")
+    main(
+        np.array([1.0, 1.0]),
+        1.0,
+        2000,
+        2000,
+        0.5,
+        "gaussian",
+        "dual",
+        TestNonLinear,
+        random.randint(0, 1000),
+    )

@@ -106,7 +106,7 @@ def TestLinear(w, b, n_A, n_B, margin, **kwargs):
 
 
 def TestNonLinear(
-    n_A, n_B, margin=5.0, n_clusters=3, cluster_spread=0.8, plot_extent=8.0, **kwargs
+    n_A, n_B, margin, seed, n_clusters=3, cluster_spread=0.8, plot_extent=8.0
 ):
     """
     Generate two classes as multiple Gaussian clusters (non-linear separability).
@@ -135,7 +135,6 @@ def TestNonLinear(
     X_B : (n_B, 2) np.ndarray
         Samples from class B.
     """
-    seed = kwargs.get("seed", 42)
     rng = default_rng(seed)
 
     samples_A = np.full(n_clusters, n_A // n_clusters)
