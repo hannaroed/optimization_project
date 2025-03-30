@@ -165,3 +165,15 @@ def TestNonLinear(
         X_B = np.vstack((X_B, cluster_B))
 
     return X_A, X_B
+
+
+if __name__ == "__main__":
+    w = np.array([1.0, 1.0])
+    b = 1.0
+    n_A = 10
+    n_B = 8
+    margin = 5.0e-1
+    listA, listB = TestLinear(w, b, n_A, n_B, margin)
+    [plt.scatter(x[0], x[1], color="r") for x in listA]
+    [plt.scatter(x[0], x[1], color="b") for x in listB]
+    plt.show()

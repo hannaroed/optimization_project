@@ -25,7 +25,7 @@ class SVM:
         self.lr = lr  # Learning rate
         self.tol = tol  # Tolerance for stopping criterion
         self.max_iter = max_iter  # Max iterations
-        self.mode = mode
+        self.mode = mode  # primal / dual
         self.w = None  # Weight vector
         self.b = 0  # Bias term
         self.alpha = None  # Lagrange multipliers (for dual)
@@ -43,7 +43,7 @@ class SVM:
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         """
-        Train the SVM model.
+        Dispatcher function for training the SVM model.
 
         Args:
             X (numpy array): Feature matrix (M x d).
@@ -60,7 +60,12 @@ class SVM:
             raise ValueError("Mode must be 'primal_SGD', 'primal_QP' or 'dual'.")
 
     def _fit_primal_SGD(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
-        """Train the SVM using Stochastic Gradient Descent (SGD) for the primal formulation."""
+        """
+        Train the SVM using Stochastic Gradient Descent (SGD) for the primal formulation.
+
+        Returns:
+            ndarray: Weight and bias term vectors.
+        """
 
         M, d = X.shape  # Number of samples, number of features
         self.w = np.zeros(d)  # Initialize weights
@@ -83,9 +88,12 @@ class SVM:
     def _fit_primal_QP(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
         """
         Train the SVM using the Quadratic Penalty (QP) method for the primal formulation.
+
+        Returns:
+            ndarray: Weight and bias term vectors.
         """
 
-        M, d = X.shape
+        _, d = X.shape
         w = np.zeros(d)
         b = 0.0
         mu_k = 1.0  # Initial penalty parameter
@@ -123,15 +131,19 @@ class SVM:
 
     def _fit_dual(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
         """
-        Train the SVM using Projected Gradient Descent (PGD) with adaptive step length (Barzilai-Borwein) for the dual formulation.
+        Train the SVM using Projected Gradient Descent (PGD),
+        with adaptive step length (advanced Barzilai-Borwein combined with exact line search) for the dual formulation.
+
+        Returns:
+            ndarray: Weight and bias term vectors (if kernel != linear, only bias term has a value).
         """
         M = X.shape[0]
         G = self._compute_gram_matrix(X)  # Compute the Gram matrix
         self.alpha = np.zeros(M)  # Initialize Lagrange multipliers
 
         iter_count = 0
-        diff = float("inf")
-        tau = 1.0  # Initial step size (add line search)
+        diff = float("inf")  # parameter to measure convergence
+        tau = 1.0  # Initial step size
 
         # Reset step history
         self._s_prev = None
@@ -229,7 +241,10 @@ class SVM:
         self, alpha: np.ndarray, d: float, G: np.ndarray, y: np.ndarray
     ) -> float:
         """
-        Perform exact line search in direction d.
+        Perform exact line search in direction d by minimizing f(alpha + theta * d_k), wrt theta.
+
+        Returns:
+            float: Minimized theta (res.x).
         """
         yd = y * d
         ya = y * alpha
@@ -239,12 +254,15 @@ class SVM:
                 alpha + theta * d
             )
 
-        res = minimize_scalar(f_theta, bounds=(0, 1), method="bounded")
+        res = minimize_scalar(f_theta, bounds=(0, 1), method="bounded")  # minimizing
         return res.x
 
     def _dual_objective(self, G: np.ndarray, y: np.ndarray, alpha: np.ndarray) -> float:
         """
-        Compute dual objective value.
+        Compute dual objective value (f(alpha) = 0.5 * inner product(alpha, yGy * alpha) - inner product(1_M, alpha)).
+
+        Returns:
+            float: Dual objective value.
         """
         return _dual_objective(G, y, alpha)
 
@@ -257,6 +275,9 @@ class SVM:
     ) -> float:
         """
         Advanced Barzilai-Borwein step size using current and previous s, z values.
+
+        Returns:
+            float: step size.
         """
         if self._s_prev is not None and self._z_prev is not None:
             new_s, new_z, tau = _step_length_selection(
@@ -290,20 +311,24 @@ class SVM:
 
     def _compute_gram_matrix(self, X: np.ndarray) -> np.ndarray:
         """
-        Compute the Gram matrix for the given data points.
+        Compute the Gram matrix for the given data points based on the kernel.
+
+        Returns:
+            ndarray: Gram matrix
         """
-
-        # X: (M x d)
-
-        G = self._kernel_function(X[:, None, ...], X[None, :, ...])
-        # G: (M x M)
+        G = self._kernel_function(
+            X[:, None, ...], X[None, :, ...]
+        )  # G: (M x M), X: (M x d)
         return G
 
     def _alpha_lambda(
         self, beta: np.ndarray, y: np.ndarray, lambd: float, C: float
     ) -> np.ndarray:
         """
-        Compute alpha(lambda) based on the given formula.
+        Compute alpha(lambda) based on the given formula (alpha(lambda) = min(max(beta + lambda * y, 0), C)).
+
+        Returns:
+            ndarray: Solution of the minimization of the partial Lagrangian.
         """
         return np.minimum(np.maximum(beta + lambd * y, 0), C)
 
@@ -319,6 +344,13 @@ class SVM:
     ) -> Tuple[float, float, float, float, float]:
         """
         Perform the bracketing phase for bisection.
+
+        Returns: values to be used in the secant phase
+            float: lambda_val
+            float: lambda_min
+            float: lambda_max
+            float: r_min
+            float: r_max
         """
         alpha_projected = self._alpha_lambda(alpha, y, 0, C)
 
@@ -375,6 +407,9 @@ class SVM:
     ) -> float:
         """
         Perform the secant phase for bisection.
+
+        Returns:
+            float: the lagrange parameter lambda.
         """
         s = 1 - r_min / (r_max + 1e-8)
         delta = delta / s
@@ -422,9 +457,12 @@ class SVM:
 
     def _project_onto_feasible_set(
         self, alpha: np.ndarray, y: np.ndarray, C: float, delta: float = 0.01
-    ):
+    ) -> np.ndarray:
         """
-        Project the alpha vector onto the feasible set using bisection.
+        Project the alpha vector onto the feasible set using bisection method.
+
+        Returns:
+            ndarray: Solution of the minimization of the partial Lagrangian.
         """
         # Bracketing phase
         lambda_val, lambda_min, lambda_max, r_min, r_max = self._bracketing_phase(
@@ -441,6 +479,9 @@ class SVM:
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
         Predict class labels using the trained SVM.
+
+        Returns:
+            ndarray: values of +/- 1.
         """
 
         return np.sign(self._decision_function(X))
@@ -449,11 +490,11 @@ class SVM:
         """
         Compute decision function values for given data points in both Primal and Dual SVM.
 
-        Parameters:
-        - X: Test feature matrix (M_test x d)
+        Args:
+        ndarray: Test feature matrix, X (M_test x d)
 
         Returns:
-        - Decision values: f(X) (M_test x 1)
+        ndarray: Decision values, f(X) (M_test x 1)
         """
         if self.mode == "primal_SGD" or self.mode == "primal_QP":
             return np.dot(X, self.w) + self.b
@@ -479,7 +520,10 @@ class SVM:
 
     def _kernel_function(self, x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
         """
-        Compute the kernel function.
+        Compute the kernel function between vectors x1 and x2.
+
+        Returns:
+        ndarray: computed kernel values.
         """
 
         if self.kernel == "linear":
@@ -521,7 +565,7 @@ def _step_length_selection(
     tau_max: float,
 ):
     """
-    Enhanced Barzilai-Borwein step size using current and previous s, z values.
+    Advanced Barzilai-Borwein step size using current and previous s, z values.
     """
     s = alpha_new - alpha_old
     z = y * (G @ (y * s))  # Gradient difference approximation
