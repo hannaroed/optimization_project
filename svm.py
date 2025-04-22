@@ -16,7 +16,7 @@ class SVM:
         lr: float = 0.01,
         tol: float = 1e-4,
         max_iter: int = 1000,
-        mode: str = "primal_SGD",
+        mode: str = "primal",
         sigma: float = 1.0,
         s: float = 1.0,
     ):
@@ -57,46 +57,14 @@ class SVM:
             None
         """
 
-        if self.mode == "primal_SGD":
-            self._fit_primal_SGD(X, y)
-        elif self.mode == "primal_QP":
-            self._fit_primal_QP(X, y)
+        if self.mode == "primal":
+            self._fit_primal(X, y)
         elif self.mode == "dual":
             self._fit_dual(X, y)
         else:
-            raise ValueError("Mode must be 'primal_SGD', 'primal_QP' or 'dual'.")
+            raise ValueError("Mode must be 'primal' or 'dual'.")
 
-    def _fit_primal_SGD(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
-        """
-        Train the SVM using Stochastic Gradient Descent (SGD) for the primal formulation.
-
-        Args:
-            X: Feature matrix (M x d).
-            y: Labels (-1 or +1).
-
-        Returns:
-            w, b: Weight and bias term vectors.
-        """
-
-        M, d = X.shape # Number of samples, number of features
-        self.w = np.zeros(d) # Initialize weights
-        self.b = 0 # Initialize bias term
-
-        for _ in range(self.max_iter):
-            for i in range(M):
-                margin = y[i] * (np.dot(self.w, X[i]) + self.b)
-
-                if margin < 1:
-                    # Update for misclassified points (hinge loss gradient)
-                    self.w = (1 - self.lr) * self.w + self.lr * self.C * y[i] * X[i]
-                    self.b += self.lr * self.C * y[i]
-                else:
-                    # Update for correctly classified points (regularization)
-                    self.w = (1 - self.lr) * self.w
-
-        return self.w, self.b
-
-    def _fit_primal_QP(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
+    def _fit_primal(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
         """
         Train the SVM using the Quadratic Penalty (QP) method for the primal formulation.
 
@@ -575,7 +543,7 @@ class SVM:
             Decision values, f(X) (M_test x 1)
         """
 
-        if self.mode == "primal_SGD" or self.mode == "primal_QP":
+        if self.mode == "primal":
             return np.dot(X, self.w) + self.b
 
         elif self.mode == "dual":
@@ -595,7 +563,7 @@ class SVM:
             return decision_values
 
         else:
-            raise ValueError("Mode must be 'primal_SGD', 'primal_QP' or 'dual'.")
+            raise ValueError("Mode must be 'primal' or 'dual'.")
 
     def _kernel_function(self, x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
         """
@@ -691,7 +659,7 @@ def main(
         n_B: number of additional samples from class B
         margin: desired margin for the samples
         kernel: function K: R^d x R^d -> R s.t. w(x) = inner product(w, K(x,))
-        mode: primal (_SGD/_QP) or dual.
+        mode: primal or dual.
 
     Returns:
         None: Plot of the dataset and descision boundary.
