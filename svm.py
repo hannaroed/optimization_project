@@ -24,20 +24,20 @@ class SVM:
         Initialize the SVM model.
         """
 
-        self.C = C # Regularization parameter
+        self.C = C  # Regularization parameter
         self.kernel = kernel
-        self.lr = lr # Learning rate
-        self.tol = tol # Tolerance for stopping criterion
-        self.max_iter = max_iter # Max iterations
-        self.mode = mode # primal / dual
-        self.w = None # Weight vector
-        self.b = 0 # Bias term
-        self.alpha = None # Lagrange multipliers
-        self.support_vectors = None # Support vectors
-        self.support_y = None # Support vector labels
-        self.support_alphas = None # Support vector Lagrange multipliers
-        self.sigma = sigma # Kernel bandwidth
-        self.s = s # Kernel parameter
+        self.lr = lr  # Learning rate
+        self.tol = tol  # Tolerance for stopping criterion
+        self.max_iter = max_iter  # Max iterations
+        self.mode = mode  # primal / dual
+        self.w = None  # Weight vector
+        self.b = 0  # Bias term
+        self.alpha = None  # Lagrange multipliers
+        self.support_vectors = None  # Support vectors
+        self.support_y = None  # Support vector labels
+        self.support_alphas = None  # Support vector Lagrange multipliers
+        self.sigma = sigma  # Kernel bandwidth
+        self.s = s  # Kernel parameter
 
         # Parameters for the Barzilai-Borwein method
         self.tau_min = 1e-5
@@ -58,9 +58,11 @@ class SVM:
         """
 
         if self.mode == "primal":
-            self._fit_primal(X, y)
+            self.w, self.b, residual_norms = self._fit_primal(X, y)
+            plot_residual_norm(residual_norms)
         elif self.mode == "dual":
-            self._fit_dual(X, y)
+            self.w, self.b, residual_norms = self._fit_dual(X, y)
+            plot_residual_norm(residual_norms)
         else:
             raise ValueError("Mode must be 'primal' or 'dual'.")
 
@@ -79,14 +81,15 @@ class SVM:
         _, d = X.shape
         w = np.zeros(d)
         b = 0.0
-        mu_k = 1.0 # Initial penalty parameter
-        tau_k = self.tol # Use tolerance from the initialization
+        mu_k = 1.0  # Initial penalty parameter
+        tau_k = self.tol  # Use tolerance from the initialization
+        residual_norms = []  # List to store residual norms
 
         for _ in range(self.max_iter):
             # Compute the margin
             margin = y * (np.dot(X, w) + b)
             indicator = margin < 1
-            
+
             # Compute the gradient
             grad_w = w - self.C * np.sum(
                 (2 * (1 - margin) * y * X.T * indicator), axis=1
@@ -99,8 +102,9 @@ class SVM:
 
             # Check stopping condition
             grad_norm = np.linalg.norm(np.append(grad_w, grad_b))
-            if grad_norm <= tau_k:
-                break # Convergence reached
+            residual_norms.append(grad_norm)
+            if grad_norm <= self.tol:
+                break  # Convergence reached
 
             # Increase penalty parameter and tighten tolerance
             mu_k *= 10
@@ -109,7 +113,7 @@ class SVM:
         self.w = w
         self.b = b
 
-        return self.w, self.b
+        return self.w, self.b, residual_norms
 
     def _fit_dual(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
         """
@@ -125,12 +129,13 @@ class SVM:
         """
 
         M = X.shape[0]
-        G = self._compute_gram_matrix(X) # Compute the Gram matrix
-        self.alpha = np.zeros(M) # Initialize Lagrange multipliers
+        G = self._compute_gram_matrix(X)  # Compute the Gram matrix
+        self.alpha = np.zeros(M)  # Initialize Lagrange multipliers
+        residual_norms = []  # List to store residual norms
 
         iter_count = 0
-        diff = float("inf") # Parameter to measure convergence
-        tau = 1.0 # Initial step size
+        diff = float("inf")  # Parameter to measure convergence
+        tau = 1.0  # Initial step size
 
         # Reset step history
         self._s_prev = None
@@ -140,9 +145,9 @@ class SVM:
         f_best = f_prev
 
         f_c = f_best
-        f_ref = float("inf") # Start as infinity
-        L = 10 # Number of allowed iterations without improvement
-        non_improving_steps_counter = 0 # Counter for non-improving steps
+        f_ref = float("inf")  # Start as infinity
+        L = 10  # Number of allowed iterations without improvement
+        non_improving_steps_counter = 0  # Counter for non-improving steps
 
         while diff > self.tol and iter_count < self.max_iter:
             # Compute gradient of the dual objective
@@ -156,21 +161,22 @@ class SVM:
             f_before_step = f_prev
             f_after_step = self._dual_objective(G, y, alpha_after)
 
-            if f_before_step < f_best: # Improved using dual
+            if f_before_step < f_best:  # Improved using dual
                 f_best = f_before_step
                 f_c = f_before_step
                 non_improving_steps_counter = 0
-            else: # Did not improve
+            else:  # Did not improve
                 f_c = max(f_c, f_before_step)
                 non_improving_steps_counter += 1
 
-            if non_improving_steps_counter == L: # We have not improved for L steps
+            if non_improving_steps_counter == L:  # We have not improved for L steps
                 f_ref = f_c
                 f_c = f_before_step
                 non_improving_steps_counter = 0
 
-            if (f_after_step > f_ref
-                or iter_count == 0): # Result is worse than the reference or first iteration
+            if (
+                f_after_step > f_ref or iter_count == 0
+            ):  # Result is worse than the reference or first iteration
                 print(f"Iteration: {iter_count}, Line search triggered")
 
                 # Perform exact line search in direction d = alpha_new - alpha
@@ -181,7 +187,14 @@ class SVM:
                 )
                 f_after_step = self._dual_objective(
                     G, y, alpha_after
-                ) # Recompute after update
+                )  # Recompute after update
+
+            # Compute residual norm: ||alpha - projection(alpha - tau * grad)||
+            projected_alpha = self._project_onto_feasible_set(
+                self.alpha - tau * gradient, y, self.C
+            )
+            residual = np.linalg.norm(self.alpha - projected_alpha)
+            residual_norms.append(residual)
 
             # Compute difference for convergence check
             diff = np.linalg.norm(alpha_after - self.alpha)
@@ -224,9 +237,11 @@ class SVM:
                 self.support_alphas * self.support_y * K_vals
             )
 
-        return self.w, self.b
+        return self.w, self.b, residual_norms
 
-    def _exact_line_search(self, alpha: np.ndarray, d: float, G: np.ndarray, y: np.ndarray) -> float:
+    def _exact_line_search(
+        self, alpha: np.ndarray, d: float, G: np.ndarray, y: np.ndarray
+    ) -> float:
         """
         Perform exact line search in direction d by minimizing f(alpha + theta * d_k), wrt theta.
 
@@ -244,7 +259,9 @@ class SVM:
         ya = y * alpha
 
         def f_theta(theta: float) -> float:
-            return 0.5 * (ya + theta * yd) @ G @ (ya + theta * yd) - np.sum(alpha + theta * d)
+            return 0.5 * (ya + theta * yd) @ G @ (ya + theta * yd) - np.sum(
+                alpha + theta * d
+            )
 
         res = minimize_scalar(f_theta, bounds=(0, 1), method="bounded")  # minimizing
         return res.x
@@ -332,7 +349,9 @@ class SVM:
         )  # G: (M x M), X: (M x d)
         return G
 
-    def _alpha_lambda(self, beta: np.ndarray, y: np.ndarray, lambd: float, C: float) -> np.ndarray:
+    def _alpha_lambda(
+        self, beta: np.ndarray, y: np.ndarray, lambd: float, C: float
+    ) -> np.ndarray:
         """
         Compute alpha(lambda) based on the given formula (alpha(lambda) = min(max(beta + lambda * y, 0), C)).
 
@@ -619,7 +638,7 @@ def _step_length_selection(
 
     # Compute s and z
     s = alpha_new - alpha_old
-    z = y * (G @ (y * s)) # Gradient difference approximation
+    z = y * (G @ (y * s))  # Gradient difference approximation
 
     # Store current s and z for next iteration
     num = np.dot(s, s) + np.dot(s_prev, s_prev)
@@ -629,6 +648,23 @@ def _step_length_selection(
     tau = min(max(tau, tau_min), tau_max)
 
     return s, z, tau
+
+
+def plot_residual_norm(residuals):
+    """
+    Function to plot the residual norm over iterations.
+    Args:
+        residuals: List of residual norms.
+    Returns:
+        None: Displays the plot.
+    """
+    plt.figure(figsize=(9, 7))
+    plt.semilogy(residuals)
+    plt.xlabel("Iteration")
+    plt.ylabel("Residual Norm (log scale)")
+    plt.title("Convergence: Residual Norm vs Iterations")
+    plt.grid(True)
+    plt.show()
 
 
 def main(
