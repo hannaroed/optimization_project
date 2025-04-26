@@ -659,11 +659,13 @@ def plot_residual_norm(residuals):
         None: Displays the plot.
     """
     plt.figure(figsize=(9, 7))
-    plt.semilogy(residuals)
-    plt.xlabel("Iteration")
-    plt.ylabel("Residual Norm (log scale)")
-    plt.title("Convergence: Residual Norm vs Iterations")
-    plt.grid(True)
+    plt.semilogy(residuals, color="#FF5733")
+    plt.xlabel("# Iteration", fontsize=12)
+    plt.xticks(fontsize=10)
+    plt.yticks(fontsize=10)
+    plt.ylabel("The Residual Norm", fontsize=12)
+    plt.title("Convergence Plot", fontsize=12)
+    plt.grid(True, alpha=0.5)
     plt.show()
 
 
