@@ -79,11 +79,9 @@ class SVM:
         """
 
         _, d = X.shape
-        w = np.zeros(d)
-        b = 0.0
-        mu_k = 1.0  # Initial penalty parameter
-        tau_k = self.tol  # Use tolerance from the initialization
-        residual_norms = []  # List to store residual norms
+        w = np.zeros(d) # Initialize weight vector
+        b = 0.0 # Initialize bias term
+        residual_norms = [] # List to store residual norms
 
         for _ in range(self.max_iter):
             # Compute the margin
@@ -103,12 +101,9 @@ class SVM:
             # Check stopping condition
             grad_norm = np.linalg.norm(np.append(grad_w, grad_b))
             residual_norms.append(grad_norm)
-            if grad_norm <= self.tol:
-                break  # Convergence reached
 
-            # Increase penalty parameter and tighten tolerance
-            mu_k *= 10
-            tau_k *= 0.1
+            if grad_norm <= self.tol:
+                break # Convergence reached
 
         self.w = w
         self.b = b
